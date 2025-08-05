@@ -1,0 +1,60 @@
+<mat-card>
+  <mat-card-header>
+    <mat-card-title>Query Knowledge Graph</mat-card-title>
+    <mat-card-subtitle>Ask questions about your processed documents</mat-card-subtitle>
+  </mat-card-header>
+  
+  <mat-card-content>
+    <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Your Question</mat-label>
+        <textarea
+          matInput
+          formControlName="question"
+          placeholder="Ask a question about your documents..."
+          [disabled]="isQuerying"
+          rows="3"
+          cdkTextareaAutosize
+          cdkAutosizeMinRows="3"
+          cdkAutosizeMaxRows="6"
+        ></textarea>
+      </mat-form-field>
+
+
+      <div class="button-row">
+        <button 
+          mat-raised-button 
+          color="primary"
+          type="submit"
+          [disabled]="form.invalid || isQuerying"
+        >
+          <mat-icon>search</mat-icon>
+          <span *ngIf="!isQuerying">Ask</span>
+          <mat-spinner *ngIf="isQuerying" diameter="20" class="ml-2"></mat-spinner>
+        </button>
+        
+        <button 
+          mat-button 
+          type="button"
+          (click)="onClear()"
+          [disabled]="isQuerying"
+          class="ml-2"
+        >
+          Clear
+        </button>
+      </div>
+    </form>
+
+
+    <div *ngIf="answer" class="answer-container mt-4">
+      <mat-card class="answer-card">
+        <mat-card-header>
+          <mat-card-title>Answer</mat-card-title>
+        </mat-card-header>
+        <mat-card-content>
+          <p class="answer-text">{{ answer }}</p>
+        </mat-card-content>
+      </mat-card>
+    </div>
+  </mat-card-content>
+</mat-card>

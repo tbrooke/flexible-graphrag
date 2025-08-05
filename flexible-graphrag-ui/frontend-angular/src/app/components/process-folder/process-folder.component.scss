@@ -1,0 +1,51 @@
+:host {
+  display: block;
+  margin-bottom: 1.5rem;
+}
+
+mat-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+mat-card-header {
+  padding: 1.5rem 1.5rem 0;
+}
+
+mat-card-title {
+  font-size: 1.25rem;
+  font-weight: 500;
+}
+
+mat-card-subtitle {
+  margin-bottom: 0;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+mat-card-content {
+  padding: 1.5rem;
+}
+
+button[mat-raised-button] {
+  min-width: 160px;
+  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+mat-spinner {
+  display: inline-block;
+  margin-left: 8px;
+}
+
+// Responsive adjustments
+@media (max-width: 600px) {
+  mat-card-header,
+  mat-card-content {
+    padding: 1rem;
+  }
+  
+  button[mat-raised-button] {
+    width: 100%;
+  }
+}

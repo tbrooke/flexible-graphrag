@@ -1,0 +1,22 @@
+<div class="app-container">
+  <mat-toolbar color="primary">
+    <mat-toolbar-row>
+      <span>{{ title }}</span>
+      <span class="spacer"></span>
+    </mat-toolbar-row>
+  </mat-toolbar>
+
+  <main class="main-content">
+    <div class="container">
+      <div class="header">
+        <h1></h1>
+        <p class="subtitle"></p>
+      </div>
+
+      <div class="content">
+        <app-process-folder (processed)="onFolderProcessed($event)"></app-process-folder>
+        <app-query-form></app-query-form>
+      </div>
+    </div>
+  </main>
+</div>

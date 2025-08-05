@@ -1,0 +1,4 @@
+# Vue environment variables
+VITE_PROCESS_FOLDER_PATH=/Shared/GraphRAG-vue
+VITE_API_BASE_URL=/api
+NODE_ENV=development

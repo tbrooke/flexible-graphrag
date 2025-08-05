@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+python-multipart
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+cmislib
+neo4j
+neo4j-graphrag==1.7.0
+python-dotenv
+numpy
+rapidfuzz
+spacy
+openai
+ollama
+pydantic

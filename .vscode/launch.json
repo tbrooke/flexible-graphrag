@@ -1,0 +1,126 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Angular Frontend Browser",
+            "url": "http://localhost:4200",
+            "webRoot": "${workspaceFolder}/flexible-graphrag-ui/frontend-angular",
+            "sourceMaps": true,
+            "runtimeArgs": [
+                "--new-window", 
+                "--user-data-dir=${workspaceFolder}/.vscode/chrome-debug-profile-angular",
+                "--remote-debugging-port=9222"
+            ],
+            "sourceMapPathOverrides": {
+                "webpack:///./src/*": "${webRoot}/src/*",
+                "webpack:///src/*": "${webRoot}/src/*",
+                "webpack:///*": "${webRoot}/*",
+                "webpack:///./~/*": "${webRoot}/node_modules/*",
+                "webpack:///node_modules/*": "${webRoot}/node_modules/*"
+            }
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch React Frontend Browser",
+            "url": "http://localhost:5174",
+            "webRoot": "${workspaceFolder}/flexible-graphrag-ui/frontend-react/src",
+            "sourceMaps": true,
+            "runtimeArgs": [
+                "--new-window", 
+                "--user-data-dir=${workspaceFolder}/.vscode/chrome-debug-profile-react",
+                "--remote-debugging-port=9223"
+            ],
+            "sourceMapPathOverrides": {
+                "/@fs/*": "${workspaceFolder}/*",
+                "/@vite/*": "${workspaceFolder}/node_modules/.vite/*",
+                "/@id/*": "${workspaceFolder}/node_modules/*",
+                "/src/*": "${workspaceFolder}/flexible-graphrag-ui/frontend-react/src/*"
+            }
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Vue Frontend Browser",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/flexible-graphrag-ui/frontend-vue/src",
+            "sourceMaps": true,
+            "runtimeArgs": [
+                "--new-window", 
+                "--user-data-dir=${workspaceFolder}/.vscode/chrome-debug-profile-vue",
+                "--remote-debugging-port=9224"
+            ],
+            "sourceMapPathOverrides": {
+                "/@fs/*": "${workspaceFolder}/*",
+                "/@vite/*": "${workspaceFolder}/node_modules/.vite/*",
+                "/@id/*": "${workspaceFolder}/node_modules/*",
+                "/src/*": "${workspaceFolder}/flexible-graphrag-ui/frontend-vue/src/*"
+            }
+        },
+        {
+            "type": "node-terminal",
+            "name": "Run Angular Dev Server",
+            "request": "launch",
+            "command": "npm start",
+            "cwd": "${workspaceFolder}/flexible-graphrag-ui/frontend-angular"
+        },
+        {
+            "type": "node-terminal",
+            "name": "Run React Dev Server",
+            "request": "launch",
+            "command": "npm run dev",
+            "cwd": "${workspaceFolder}/flexible-graphrag-ui/frontend-react"
+        },
+        {
+            "type": "node-terminal",
+            "name": "Run Vue Dev Server",
+            "request": "launch",
+            "command": "npm run dev",
+            "cwd": "${workspaceFolder}/flexible-graphrag-ui/frontend-vue"
+        },
+       {
+            "name": "Python: FastAPI Backend",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "main:app",
+                "--reload",
+                "--port",
+                "8000"
+            ],
+            "cwd": "${workspaceFolder}/flexible-graphrag",
+            "python": "${command:python.interpreterPath}",
+            "justMyCode": true
+        }         
+    ],
+    "compounds": [
+        {
+            "name": "Angular Dev Server and Frontend Browser",
+            "configurations": ["Run Angular Dev Server", "Launch Angular Frontend Browser"]
+        },
+        {
+            "name": "Full Stack with Angular and Python",
+            "configurations": ["Python: FastAPI Backend", "Run Angular Dev Server", "Launch Angular Frontend Browser"]
+        },
+        {
+            "name": "React Dev Server and Frontend Browser",
+            "configurations": ["Run React Dev Server", "Launch React Frontend Browser"]
+        },
+        {
+            "name": "Full Stack with React and Python",
+            "configurations": ["Python: FastAPI Backend", "Run React Dev Server", "Launch React Frontend Browser"]
+        },
+        {
+            "name": "Vue Dev Server and Frontend Browser",
+            "configurations": ["Run Vue Dev Server", "Launch Vue Frontend Browser"]
+        },
+        {
+            "name": "Full Stack with Vue and Python",
+            "configurations": ["Python: FastAPI Backend", "Run Vue Dev Server", "Launch Vue Frontend Browser"]
+        }
+    ]
+}

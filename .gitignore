@@ -1,0 +1,174 @@
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+.python-version
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytest_cache/
+pytestdebug.log
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+cover/
+.pybuilder/
+target/
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+.pdm.toml
+__pypackages__/
+celerybeat-schedule
+celerybeat.pid
+*.sage.py
+.spyderproject
+.spyproject
+.ropeproject
+/site
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.pnp/
+.pnp.js
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Angular specific
+.angular/
+/tmp/
+/out-tsc/
+/bazel-out/
+.sass-cache/
+connect.lock
+/libpeerconnection.log
+testem.log
+/typings/
+.angular/cache/
+.angular/local/
+
+# React specific
+.docusaurus/
+.cache/
+.parcel-cache/
+.next/
+out/
+.nuxt/
+.vuepress/dist/
+.temp/
+.docz/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+
+# Vue specific
+/dist-ssr
+.eslintcache
+.stylelintcache
+
+# TypeScript specific
+*.tsbuildinfo
+next-env.d.ts
+*.js.map
+*.ts.map
+*.tsx.map
+tsconfig.tsbuildinfo
+
+# Vite specific
+.vite/
+
+# Common build directories
+/dist/
+/build/
+coverage/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Testing
+/coverage
+/.nyc_output
+
+# Log files
+logs/
+*.log
+lerna-debug.log*
+*.local
+
+# Cursor  
+#  Cursor is an AI-powered code editor.`.cursorignore` specifies files/directories to 
+#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
+#  refer to https://docs.cursor.com/context/ignore-files
+.cursorignore
+.cursorindexingignore
+*.cursormemory
+.cursormemory
+memory-bank/
+

@@ -1,0 +1,2 @@
+# React environment variables
+VITE_PROCESS_FOLDER_PATH=/Shared/GraphRAG-react
