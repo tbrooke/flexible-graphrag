@@ -11,6 +11,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSelectModule } from '@angular/material/select';
 import { TextFieldModule } from '@angular/cdk/text-field';
 import { CommonModule } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
@@ -45,6 +46,7 @@ export function initializeEnv(envService: EnvService) {
     MatSnackBarModule,
     MatToolbarModule,
     MatIconModule,
+    MatSelectModule,
     TextFieldModule
   ],
   providers: [

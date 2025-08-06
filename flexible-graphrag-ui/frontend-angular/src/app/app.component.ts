@@ -10,8 +10,8 @@ import { CommonModule } from '@angular/common';
 export class AppComponent {
   title = 'Flexible GraphRAG (Angular)';
   
-  onFolderProcessed(event: { path: string }): void {
-    console.log('Folder was processed:', event.path);
+  onFolderProcessed(event: { dataSource: string, path?: string }): void {
+    console.log('Folder was processed:', event.dataSource, event.path);
     // You can add any additional logic here when a folder is processed
   }
 }

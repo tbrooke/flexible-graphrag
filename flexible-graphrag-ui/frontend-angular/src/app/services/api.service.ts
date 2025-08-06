@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, catchError, throwError } from 'rxjs';
-import { ProcessFolderRequest, QueryRequest, ApiResponse } from '../models/api.models';
+import { ProcessFolderRequest, QueryRequest, ApiResponse, IngestRequest } from '../models/api.models';
 
 @Injectable({
   providedIn: 'root'
@@ -10,6 +10,15 @@ export class ApiService {
   private apiUrl = '/api';
 
   constructor(private http: HttpClient) {}
+
+  ingestDocuments(request: IngestRequest): Observable<ApiResponse> {
+    return this.http.post<ApiResponse>(
+      `${this.apiUrl}/ingest`,
+      request
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
 
   processFolder(request: ProcessFolderRequest): Observable<ApiResponse> {
     return this.http.post<ApiResponse>(
@@ -20,10 +29,27 @@ export class ApiService {
     );
   }
 
+  search(request: QueryRequest): Observable<ApiResponse> {
+    return this.http.post<ApiResponse>(
+      `${this.apiUrl}/search`,
+      request
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
   query(request: QueryRequest): Observable<ApiResponse> {
     return this.http.post<ApiResponse>(
       `${this.apiUrl}/query`,
       request
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
+  getStatus(): Observable<ApiResponse> {
+    return this.http.get<ApiResponse>(
+      `${this.apiUrl}/status`
     ).pipe(
       catchError(this.handleError)
     );

@@ -1,0 +1,22 @@
+# FastMCP server dependencies
+fastmcp
+
+# Shared backend dependencies (subset of main requirements)
+python-dotenv
+pydantic
+
+# LlamaIndex core - needed for shared backend
+llama-index
+llama-index-llms-openai
+llama-index-llms-ollama
+llama-index-embeddings-openai
+llama-index-embeddings-ollama
+llama-index-vector-stores-neo4j
+llama-index-graph-stores-neo4j
+llama-index-retrievers-bm25
+
+# Document processing
+docling
+
+# Databases
+neo4j

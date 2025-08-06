@@ -1,17 +1,28 @@
 <mat-card>
   <mat-card-header>
-    <mat-card-title>Query Knowledge Graph</mat-card-title>
-    <mat-card-subtitle>Ask questions about your processed documents</mat-card-subtitle>
+    <mat-card-title>Search & Query</mat-card-title>
+    <mat-card-subtitle>Search documents or ask questions about your processed documents</mat-card-subtitle>
   </mat-card-header>
   
   <mat-card-content>
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <!-- Search Mode Selection -->
+      <mat-form-field appearance="outline" class="w-100 mb-3">
+        <mat-label>Search Mode</mat-label>
+        <mat-select formControlName="searchMode" [disabled]="isQuerying">
+          <mat-option value="search">Hybrid Search (returns ranked results)</mat-option>
+          <mat-option value="query">Q&A Query (returns generated answer)</mat-option>
+        </mat-select>
+        <mat-hint>Choose between search results or AI-generated answers</mat-hint>
+      </mat-form-field>
+
       <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Your Question</mat-label>
+        <mat-label *ngIf="form.value.searchMode === 'search'">Search Query</mat-label>
+        <mat-label *ngIf="form.value.searchMode === 'query'">Your Question</mat-label>
         <textarea
           matInput
           formControlName="question"
-          placeholder="Ask a question about your documents..."
+          [placeholder]="form.value.searchMode === 'search' ? 'Search for documents...' : 'Ask a question about your documents...'"
           [disabled]="isQuerying"
           rows="3"
           cdkTextareaAutosize
@@ -19,7 +30,6 @@
           cdkAutosizeMaxRows="6"
         ></textarea>
       </mat-form-field>
-
 
       <div class="button-row">
         <button 
@@ -29,7 +39,8 @@
           [disabled]="form.invalid || isQuerying"
         >
           <mat-icon>search</mat-icon>
-          <span *ngIf="!isQuerying">Ask</span>
+          <span *ngIf="!isQuerying && form.value.searchMode === 'search'">Search</span>
+          <span *ngIf="!isQuerying && form.value.searchMode === 'query'">Ask</span>
           <mat-spinner *ngIf="isQuerying" diameter="20" class="ml-2"></mat-spinner>
         </button>
         
@@ -46,13 +57,44 @@
     </form>
 
 
-    <div *ngIf="answer" class="answer-container mt-4">
+    <!-- Answer Display for Q&A -->
+    <div *ngIf="answer && form.value.searchMode === 'query'" class="answer-container mt-4">
       <mat-card class="answer-card">
         <mat-card-header>
           <mat-card-title>Answer</mat-card-title>
         </mat-card-header>
         <mat-card-content>
           <p class="answer-text">{{ answer }}</p>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <!-- Search Results Display -->
+    <div *ngIf="searchResults && form.value.searchMode === 'search'" class="search-results mt-4">
+      <mat-card>
+        <mat-card-header>
+          <mat-card-title>Search Results</mat-card-title>
+          <mat-card-subtitle>{{ searchResults.length }} results found</mat-card-subtitle>
+        </mat-card-header>
+        <mat-card-content>
+          <div *ngFor="let result of searchResults; let i = index" class="result-item mb-3">
+            <mat-card class="result-card">
+              <mat-card-header>
+                <mat-card-title class="result-title">
+                  <span class="rank-badge">{{ result.rank }}</span>
+                  {{ result.file_name }}
+                </mat-card-title>
+                <mat-card-subtitle>
+                  Score: {{ result.score | number:'1.3-3' }} | 
+                  Type: {{ result.file_type }} | 
+                  Source: {{ result.source }}
+                </mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <p class="result-content">{{ result.content }}</p>
+              </mat-card-content>
+            </mat-card>
+          </div>
         </mat-card-content>
       </mat-card>
     </div>

@@ -3,7 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { finalize } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
-import { ApiResponse } from '../../models/api.models';
+import { ApiResponse, SearchResult } from '../../models/api.models';
 
 @Component({
   selector: 'app-query-form',
@@ -15,6 +15,7 @@ export class QueryFormComponent {
   form: FormGroup;
   isQuerying = false;
   answer: string | null = null;
+  searchResults: SearchResult[] | null = null;
 
   constructor(
     private fb: FormBuilder,
@@ -22,7 +23,8 @@ export class QueryFormComponent {
     private snackBar: MatSnackBar
   ) {
     this.form = this.fb.group({
-      question: ['', Validators.required]
+      question: ['', Validators.required],
+      searchMode: ['search', Validators.required]  // Default to search
     });
   }
 
@@ -32,34 +34,50 @@ export class QueryFormComponent {
     }
 
     const request = {
-      question: this.form.value.question
+      query: this.form.value.question,
+      top_k: 10
     };
 
-    console.log('Submitting query:', request);
+    const searchMode = this.form.value.searchMode;
+    console.log('Submitting request:', request, 'Mode:', searchMode);
+    
     this.isQuerying = true;
     this.answer = null;
+    this.searchResults = null;
     
-    this.apiService.query(request)
-      .pipe(
+    const apiCall = searchMode === 'search' 
+      ? this.apiService.search(request)
+      : this.apiService.query(request);
+    
+    apiCall.pipe(
         finalize(() => this.isQuerying = false)
       )
       .subscribe({
         next: (response: ApiResponse) => {
           console.log('Response received:', response);
           
-          // Handle simplified response structure
-          if (response.answer) {
-            this.answer = response.answer;
+          if (searchMode === 'search') {
+            // Handle search results
+            if (response.results && response.results.length > 0) {
+              this.searchResults = response.results;
+            } else {
+              this.snackBar.open('No search results found', 'Close', { duration: 3000 });
+            }
           } else {
-            this.answer = 'No answer found';
+            // Handle Q&A response
+            if (response.answer) {
+              this.answer = response.answer;
+            } else {
+              this.answer = 'No answer found';
+            }
           }
           
-          console.log('Final answer value:', this.answer);
+          console.log('Final result:', { answer: this.answer, searchResults: this.searchResults });
         },
         error: (error) => {
           console.error('Query error:', error);
           this.snackBar.open(
-            error.message || 'Error executing query',
+            error.message || `Error executing ${searchMode}`,
             'Close',
             { duration: 5000, panelClass: ['error-snackbar'] }
           );
@@ -69,6 +87,11 @@ export class QueryFormComponent {
 
   onClear(): void {
     this.answer = null;
+    this.searchResults = null;
     this.form.reset();
+    // Reset to default values
+    this.form.patchValue({
+      searchMode: 'search'
+    });
   }
 }

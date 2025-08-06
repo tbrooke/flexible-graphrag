@@ -12,7 +12,7 @@ import { EnvService } from '../../services/env.service';
   standalone: false
 })
 export class ProcessFolderComponent implements OnInit {
-  @Output() processed = new EventEmitter<{ path: string }>();
+  @Output() processed = new EventEmitter<{ dataSource: string, path?: string }>();
   
   form: FormGroup;
   isProcessing = false;
@@ -24,7 +24,21 @@ export class ProcessFolderComponent implements OnInit {
     private envService: EnvService
   ) {
     this.form = this.fb.group({
-      folderPath: ['', Validators.required]
+      dataSource: ['filesystem', Validators.required],
+      folderPath: [''],
+      // CMIS fields
+      cmisUrl: [''],
+      cmisUsername: [''],
+      cmisPassword: [''],
+      // Alfresco fields
+      alfrescoUrl: [''],
+      alfrescoUsername: [''],
+      alfrescoPassword: ['']
+    });
+
+    // Set up conditional validators
+    this.form.get('dataSource')?.valueChanges.subscribe(dataSource => {
+      this.updateValidators(dataSource);
     });
   }
 
@@ -36,6 +50,42 @@ export class ProcessFolderComponent implements OnInit {
         folderPath: defaultPath
       });
     }
+    
+    // Set initial validators
+    this.updateValidators('filesystem');
+  }
+
+  private updateValidators(dataSource: string): void {
+    // Clear all validators first
+    Object.keys(this.form.controls).forEach(key => {
+      if (key !== 'dataSource') {
+        this.form.get(key)?.clearValidators();
+      }
+    });
+
+    // Set validators based on data source
+    switch (dataSource) {
+      case 'filesystem':
+        this.form.get('folderPath')?.setValidators([Validators.required]);
+        break;
+      case 'cmis':
+        this.form.get('cmisUrl')?.setValidators([Validators.required]);
+        this.form.get('cmisUsername')?.setValidators([Validators.required]);
+        this.form.get('cmisPassword')?.setValidators([Validators.required]);
+        this.form.get('folderPath')?.setValidators([Validators.required]);
+        break;
+      case 'alfresco':
+        this.form.get('alfrescoUrl')?.setValidators([Validators.required]);
+        this.form.get('alfrescoUsername')?.setValidators([Validators.required]);
+        this.form.get('alfrescoPassword')?.setValidators([Validators.required]);
+        this.form.get('folderPath')?.setValidators([Validators.required]);
+        break;
+    }
+
+    // Update validity
+    Object.keys(this.form.controls).forEach(key => {
+      this.form.get(key)?.updateValueAndValidity();
+    });
   }
 
   onSubmit(): void {
@@ -44,25 +94,55 @@ export class ProcessFolderComponent implements OnInit {
     }
 
     this.isProcessing = true;
-    const request = {
-      folder_path: this.form.value.folderPath
+    const formValue = this.form.value;
+    
+    // Build request based on data source
+    const request: any = {
+      data_source: formValue.dataSource
     };
 
-    this.apiService.processFolder(request)
+    if (formValue.dataSource === 'filesystem') {
+      request.paths = [formValue.folderPath];
+    } else if (formValue.dataSource === 'cmis') {
+      // For now, we'll pass the paths as the folder path since CMIS isn't fully implemented
+      request.paths = [formValue.folderPath];
+      // In future, these would be used to configure CMIS connection
+      request.cmis_config = {
+        url: formValue.cmisUrl,
+        username: formValue.cmisUsername,
+        password: formValue.cmisPassword,
+        folder_path: formValue.folderPath
+      };
+    } else if (formValue.dataSource === 'alfresco') {
+      // For now, we'll pass the paths as the folder path since Alfresco isn't fully implemented
+      request.paths = [formValue.folderPath];
+      // In future, these would be used to configure Alfresco connection
+      request.alfresco_config = {
+        url: formValue.alfrescoUrl,
+        username: formValue.alfrescoUsername,
+        password: formValue.alfrescoPassword,
+        path: formValue.folderPath
+      };
+    }
+
+    this.apiService.ingestDocuments(request)
       .pipe(
         finalize(() => this.isProcessing = false)
       )
       .subscribe({
         next: () => {
-          this.snackBar.open('Folder processed successfully!', 'Close', {
+          this.snackBar.open('Documents ingested successfully!', 'Close', {
             duration: 3000,
             panelClass: ['success-snackbar']
           });
-          this.processed.emit({ path: request.folder_path });
+          this.processed.emit({ 
+            dataSource: formValue.dataSource, 
+            path: formValue.folderPath 
+          });
         },
         error: (error) => {
           this.snackBar.open(
-            error.message || 'Error processing folder',
+            error.message || 'Error ingesting documents',
             'Close',
             { duration: 5000, panelClass: ['error-snackbar'] }
           );

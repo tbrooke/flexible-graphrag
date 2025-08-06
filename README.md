@@ -13,8 +13,9 @@ The UI provides for entering text queries that are given to neo4j-graphrag for c
 | ![Angular UI](./angular-ui.png) | ![React UI](./react-ui.png) | ![Vue UI](./vue-ui.png) |
 
 ## Notes
-   - Only supports PDF documents currently.
-   - Try with a folder with a or few small PDF documents in it initially.
+   - **Supported file types**: PDF, DOCX, PPTX (via Docling), plus TXT and MD files
+   - **Data sources**: File system (local files/folders), CMIS repositories, or Alfresco
+   - Try with a folder with a few small documents initially.
    - Doesn't support replacing previous KG building if repeat the same document 
    (will get duplicate doc and chunk nodes, shouldn't duplicate entity and relationship nodes)
    - GraphRAG would be for a select set of docs needing more accuracy with answers to questions. 
@@ -25,13 +26,18 @@ The UI provides for entering text queries that are given to neo4j-graphrag for c
 
 ## Prerequisites
 
+### Required
 - Python 3.10+ (supports 3.10, 3.11, 3.12, 3.13)
 - UV package manager
 - Node.js 16+
 - npm or yarn
 - Neo4j graph database
-- CMIS-compliant repository (e.g., Alfresco, etc.)
 - Ollama or OpenAI with API key (for LLM processing)
+
+### Optional (depending on data source)
+- CMIS-compliant repository (e.g., Alfresco) - only if using CMIS data source
+- Alfresco repository - only if using Alfresco data source
+- File system data source requires no additional setup
 
 ## Setup
 
@@ -73,6 +79,19 @@ The UI provides for entering text queries that are given to neo4j-graphrag for c
    ```
 
 ### Frontend Setup
+
+**Important**: Development vs Production serving:
+
+**Development Mode** (frontend and backend run separately):
+- **Backend API**: http://localhost:8000 (FastAPI server only)
+- **Angular Dev**: http://localhost:4200 (ng serve)
+- **React Dev**: http://localhost:5173 (npm run dev)
+- **Vue Dev**: http://localhost:5174 (npm run dev)
+
+**Production Mode** (backend serves built frontend):
+- **Everything**: http://localhost:8000 (FastAPI serves API + built frontend)
+- Requires building frontend first: `ng build`, `npm run build`, etc.
+- Backend automatically detects and serves the built frontend
 
 Choose one of the following frontend options to work with:
 
@@ -150,6 +169,51 @@ The backend will be available at `http://localhost:8000`.
 
 Follow the instructions in the Frontend Setup section for your chosen frontend framework.
 
+### Production Build and Deployment
+
+For production, build the frontend and let the backend serve it:
+
+#### Build Frontend
+```bash
+# Angular
+cd flexible-graphrag-ui/frontend-angular
+ng build
+
+# React  
+cd flexible-graphrag-ui/frontend-react
+npm run build
+
+# Vue
+cd flexible-graphrag-ui/frontend-vue
+npm run build
+```
+
+#### Start Production Server
+```bash
+cd flexible-graphrag
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+The backend will:
+1. Check for all built frontends and serve each at its own route
+2. Serve all available frontends simultaneously at different URLs
+3. Serve API endpoints at the same port under `/api/*`
+4. Provide a root endpoint listing all available interfaces
+
+**Production URLs (all on port 8000)**:
+- **Root Info**: http://localhost:8000/ (lists all available frontends and API)
+- **Angular UI**: http://localhost:8000/angular/ (if built)
+- **React UI**: http://localhost:8000/react/ (if built)
+- **Vue UI**: http://localhost:8000/vue/ (if built)
+- **API Endpoints**: http://localhost:8000/api/* (ingest, search, query, status, etc.)
+- **API Info**: http://localhost:8000/api/info (lists all endpoints and frontends)
+- **Health Check**: http://localhost:8000/api/health
+
+**Build any or all frontends**:
+- You can build one, two, or all three frontends
+- Each built frontend will be available at its own route
+- Users can choose which UI they prefer to use
+
 ## Full-Stack Debugging
 
 The project includes a `sample-launch.json` file with VS Code debugging configurations for all three frontend options and the backend. Copy this file to `.vscode/launch.json` to use these configurations.
@@ -165,17 +229,73 @@ Each configuration sets up the appropriate ports, source maps, and debugging too
 
 ## Usage
 
-1. **Process Documents**:
-   - Enter the path to a folder in your CMIS repository (e.g., `/Shared/GraphRAG`)
-   - Click "Process Folder" to vector index and build knowledge graphs of the entities and relationships in the content of the documents in the folder. 
-   - The documents are processed using the [neo4j-graphrag](https://github.com/neo4j/neo4j-graphrag-python) python package from Neo4j (which uses LLMs) to build knowledge graphs in Neo4j.
-   
-     
+### 1. Ingest Documents
 
-2. **Query Neo4j using GrapRAG with the Knowledge Graphs**:
-   - Enter a question in the query box
-   - Click "Ask" to get an answer based on the processed documents
-   _ The [neo4j-graphrag](https://github.com/neo4j/neo4j-graphrag-python) package is used for this also (again LLMs are used)
+The system supports three data sources. Choose your data source in the web interface:
+
+#### File System (Default)
+- **Select**: "File System" from the data source dropdown
+- **Enter**: Path to a file or folder (e.g., `C:\Documents\reports` or `/home/user/docs/report.pdf`)
+- **Supported files**: PDF, DOCX, PPTX, TXT, MD
+- **Click**: "Ingest Documents" to process
+
+#### CMIS Repository
+- **Select**: "CMIS Repository" from the data source dropdown
+- **Configure**: 
+  - CMIS Repository URL (e.g., `http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom`)
+  - Username and password
+  - Folder path (e.g., `/Sites/example/documentLibrary`)
+- **Click**: "Ingest Documents" to process
+
+#### Alfresco Repository
+- **Select**: "Alfresco Repository" from the data source dropdown
+- **Configure**:
+  - Alfresco Base URL (e.g., `http://localhost:8080/alfresco`)
+  - Username and password
+  - Path (e.g., `/Sites/example/documentLibrary`)
+- **Click**: "Ingest Documents" to process
+
+The system uses:
+- **Docling** for advanced PDF/DOCX conversion to markdown
+- **LlamaIndex** for vector indexing and knowledge graph creation
+- **Neo4j** for storing vectors and knowledge graphs
+- **BM25** for full-text search (no additional search engine required)
+
+### 2. Search and Query
+
+The system offers two distinct modes for retrieving information:
+
+#### Hybrid Search (Document Retrieval)
+- **Purpose**: Find and rank the most relevant document excerpts
+- **Use when**: You want to see actual source material and multiple perspectives
+- **Select**: "Hybrid Search" mode in the web interface
+- **Enter**: Search terms or phrases (e.g., "machine learning algorithms", "financial projections")
+- **Results**: Ranked list of document excerpts with:
+  - Relevance scores
+  - Source file names and types
+  - Exact text snippets from documents
+- **Best for**: Research, fact-checking, finding specific information across documents
+
+#### Q&A Query (AI-Generated Answers)
+- **Purpose**: Get synthesized answers to natural language questions
+- **Use when**: You want a comprehensive answer combining information from multiple sources
+- **Select**: "Q&A Query" mode in the web interface  
+- **Enter**: Natural language questions (e.g., "What are the main findings in the research papers?", "How do the quarterly results compare?")
+- **Results**: AI-generated narrative answers that:
+  - Synthesize information from multiple documents
+  - Provide coherent, contextual responses
+  - Reference the underlying source material
+- **Best for**: Summarization, analysis, getting overviews of complex topics
+
+#### Technical Implementation
+The hybrid search combines three retrieval methods:
+- **Vector similarity** search using embeddings for semantic matching
+- **BM25 full-text** search for exact keyword matching
+- **Graph traversal** for entity and relationship discovery from knowledge graphs
+
+Both modes use the same underlying retrieval but process results differently:
+- **Search**: Returns raw ranked documents for user review
+- **Q&A**: Feeds documents to LLM for answer generation
    
 3. **Testing Cleanup**
    - Between tests you can delete detach nodes and relations in Neo4j, drop only vector_index_openai, vector_index_ollama and __entity__id indexes 
@@ -184,14 +304,24 @@ Each configuration sets up the appropriate ports, source maps, and debugging too
 
 ## Project Structure
 
-- `/flexible-graphrag`: Python FastAPI backend
-  - `main.py`: FastAPI application with endpoints for processing and querying
-  - `cmis_util.py`: CMIS repository interaction utilities
-  - `neo4j_util.py`: Neo4j graph database utilities
-  - `requirements.txt`: Python dependencies
-  - Based on code from the [cmis-graphrag](https://github.com/stevereiner/cmis-graphrag) project, which demonstrates CMIS integration with Neo4j GraphRAG
-  - See the [cmis-graphrag README](https://github.com/stevereiner/cmis-graphrag/blob/main/README.md) for more details on the original implementation
-  - Uses the [neo4j-graphrag](https://github.com/neo4j/neo4j-graphrag-python) package from Neo4j ([documentation](https://neo4j.com/docs/neo4j-graphrag-python/current/))
+- `/flexible-graphrag`: Python FastAPI backend with LlamaIndex
+  - `main.py`: FastAPI REST API server (clean, no MCP)
+  - `backend.py`: Shared business logic core used by both API and MCP
+  - `config.py`: Configurable settings for data sources, databases, and LLM providers
+  - `hybrid_system.py`: Main hybrid search system using LlamaIndex
+  - `document_processor.py`: Document processing with Docling integration
+  - `factories.py`: Factory classes for LLM and database creation
+  - `sources.py`: Data source connectors (filesystem, CMIS, Alfresco)
+  - `requirements.txt`: FastAPI and LlamaIndex dependencies
+  - `start.py`: Startup script for uvicorn
+  - `install.py`: Installation helper script
+
+- `/flexible-graphrag-mcp`: Standalone FastMCP server
+  - `fastmcp-server.py`: Proper remote MCP server using shared backend.py
+  - `main.py`: Alternative HTTP-based MCP client (calls REST API)
+  - `requirements.txt`: FastMCP and shared backend dependencies
+  - `README.md`: MCP server setup instructions
+  - **No HTTP overhead**: Calls backend.py directly through Python imports
 
 - `/flexible-graphrag-ui`: Frontend applications
   - `/frontend-react`: React + TypeScript frontend (built with Vite)
