@@ -60,13 +60,28 @@ app.add_middleware(
 )
 
 # Models
+class CmisConfig(BaseModel):
+    url: str
+    username: str
+    password: str
+    folder_path: str
+
+class AlfrescoConfig(BaseModel):
+    url: str
+    username: str
+    password: str
+    path: str
+
 class IngestRequest(BaseModel):
     paths: Optional[List[str]] = None  # overrides config
     data_source: Optional[str] = None  # filesystem, cmis, alfresco
+    cmis_config: Optional[CmisConfig] = None
+    alfresco_config: Optional[AlfrescoConfig] = None
 
 class QueryRequest(BaseModel):
     query: str
     top_k: int = 10
+    query_type: Optional[str] = "hybrid"  # hybrid, qa
 
 class Document(BaseModel):
     id: str
@@ -100,7 +115,14 @@ async def ingest(request: IngestRequest):
         # Log start of processing
         logger.info(f"Starting document ingestion for {len(paths) if paths else 0} paths")
         
-        result = await backend_instance.ingest_documents(data_source=data_source, paths=paths)
+        # Prepare additional kwargs for data source configs
+        kwargs = {}
+        if request.cmis_config:
+            kwargs['cmis_config'] = request.cmis_config.dict()
+        if request.alfresco_config:
+            kwargs['alfresco_config'] = request.alfresco_config.dict()
+        
+        result = await backend_instance.ingest_documents(data_source=data_source, paths=paths, **kwargs)
         
         if result["success"]:
             logger.info("Ingestion completed successfully")
@@ -118,14 +140,24 @@ async def ingest(request: IngestRequest):
 @app.post("/api/search")
 async def search(request: QueryRequest):
     try:
-        logger.info(f"Processing search query: {request.query}")
-        result = await backend_instance.search_documents(request.query, request.top_k)
+        logger.info(f"Processing {request.query_type} query: {request.query}")
         
-        if result["success"]:
-            logger.info("Search completed successfully")
-            return {"status": "success", "results": result["results"]}
+        if request.query_type == "qa":
+            # Q&A query - return answer
+            result = await backend_instance.qa_query(request.query)
+            if result["success"]:
+                logger.info("Q&A query completed successfully")
+                return {"success": True, "answer": result["answer"]}
+            else:
+                raise HTTPException(500, result["error"])
         else:
-            raise HTTPException(500, result["error"])
+            # Hybrid search - return results
+            result = await backend_instance.search_documents(request.query, request.top_k)
+            if result["success"]:
+                logger.info("Hybrid search completed successfully")
+                return {"success": True, "results": result["results"]}
+            else:
+                raise HTTPException(500, result["error"])
     except HTTPException:
         raise
     except Exception as e:

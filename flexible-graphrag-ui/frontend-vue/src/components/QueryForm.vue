@@ -1,37 +1,87 @@
 <template>
   <v-card class="pa-4">
-    <v-card-title>Ask a Question</v-card-title>
+    <v-card-title>Search and Query</v-card-title>
     <v-card-text>
+      <!-- Tab Selection -->
+      <v-tabs
+        v-model="activeTab"
+        class="mb-4"
+        color="primary"
+      >
+        <v-tab value="search">Hybrid Search</v-tab>
+        <v-tab value="qa">Q&A Query</v-tab>
+      </v-tabs>
+
+      <!-- Query Input -->
       <v-text-field
         v-model="question"
-        label="Ask a question"
+        :label="activeTab === 'search' ? 'Search terms' : 'Ask a question'"
         variant="outlined"
         @keyup.enter="handleQuery"
         :loading="isQuerying"
         :disabled="isQuerying"
         class="mb-4"
+        :placeholder="activeTab === 'search' 
+          ? 'e.g., machine learning algorithms' 
+          : 'e.g., What are the key findings?'"
         @keydown.enter.prevent
       ></v-text-field>
+      
       <v-btn
         color="primary"
         @click="handleQuery"
         :disabled="!question.trim() || isQuerying"
         :loading="isQuerying"
+        size="large"
       >
-        {{ isQuerying ? '' : 'Ask' }}
+        {{ isQuerying ? '' : (activeTab === 'search' ? 'Search' : 'Ask') }}
         <template v-slot:loader>
           <v-progress-circular indeterminate size="24"></v-progress-circular>
         </template>
       </v-btn>
 
-      <v-alert
-        v-if="answer"
-        type="info"
-        class="mt-4"
-      >
-        <strong>Answer:</strong> {{ formattedAnswer }}
-      </v-alert>
+      <!-- Search Results Tab -->
+      <v-window v-model="activeTab" class="mt-4">
+        <v-window-item value="search">
+          <div v-if="searchResults.length > 0">
+            <v-card-title class="pa-0 mb-3">
+              Search Results ({{ searchResults.length }})
+            </v-card-title>
+            <v-card
+              v-for="(result, index) in searchResults"
+              :key="index"
+              class="mb-3"
+              variant="outlined"
+            >
+              <v-card-text>
+                <div class="text-caption text-medium-emphasis mb-2">
+                  <strong>Source:</strong> {{ result.metadata?.source || 'Unknown' }} | 
+                  <strong>Score:</strong> {{ result.score?.toFixed(3) || 'N/A' }}
+                </div>
+                <div class="text-body-1">
+                  {{ result.text || result.content || 'No content available' }}
+                </div>
+              </v-card-text>
+            </v-card>
+          </div>
+        </v-window-item>
 
+        <!-- Q&A Answer Tab -->
+        <v-window-item value="qa">
+          <v-alert
+            v-if="qaAnswer"
+            type="info"
+            class="mt-4"
+            variant="tonal"
+          >
+            <div class="text-body-1">
+              <strong>Answer:</strong> {{ qaAnswer }}
+            </div>
+          </v-alert>
+        </v-window-item>
+      </v-window>
+
+      <!-- Error Alert -->
       <v-alert
         v-if="error"
         type="error"
@@ -44,40 +94,87 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, watch } from 'vue';
 import axios from 'axios';
-import type { QueryRequest, ApiResponse } from '../types/api';
 
+interface QueryRequest {
+  query: string;
+  query_type?: string;
+  top_k?: number;
+}
+
+interface ApiResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  answer?: string;
+  results?: any[];
+}
+
+// Reactive variables
+const activeTab = ref('search');
 const question = ref('');
 const isQuerying = ref(false);
 const error = ref('');
-const answer = ref('');
+const searchResults = ref<any[]>([]);
+const qaAnswer = ref('');
 
-const formattedAnswer = computed(() => {
-  return answer.value;
+// Clear results when switching tabs
+watch(activeTab, () => {
+  error.value = '';
+  searchResults.value = [];
+  qaAnswer.value = '';
 });
 
 const handleQuery = async (): Promise<void> => {
-  if (!question.value.trim()) return;
+  if (!question.value.trim() || isQuerying.value) return;
   
   try {
     isQuerying.value = true;
     error.value = '';
+    searchResults.value = [];
+    qaAnswer.value = '';
     
-    const response = await axios.post<ApiResponse>(
-      '/api/query',
-      { question: question.value } as QueryRequest
-    );
+    console.log('Sending query request:', {
+      query: question.value,
+      type: activeTab.value
+    });
     
-    // Handle simplified response structure
-    if (response.data.answer) {
-      answer.value = response.data.answer;
+    const queryType = activeTab.value === 'search' ? 'hybrid' : 'qa';
+    const request: QueryRequest = {
+      query: question.value,
+      query_type: queryType,
+      top_k: 10
+    };
+    
+    const response = await axios({
+      method: 'post',
+      url: '/api/search',
+      data: request,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log('Query response received:', response.data);
+    
+    if (response.data.success) {
+      if (activeTab.value === 'search' && response.data.results) {
+        searchResults.value = response.data.results;
+      } else if (activeTab.value === 'qa' && response.data.answer) {
+        qaAnswer.value = response.data.answer;
+      }
     } else {
-      answer.value = 'No answer found';
+      error.value = response.data.error || 'Error executing query';
     }
   } catch (err: any) {
-    console.error('Error querying:', err);
-    error.value = err.response?.data?.detail || 'Error executing query';
+    console.error('Error querying:', {
+      message: err.message,
+      response: err.response?.data,
+      status: err.response?.status
+    });
+    error.value = err.response?.data?.detail || err.response?.data?.error || 'Error executing query';
   } finally {
     isQuerying.value = false;
   }

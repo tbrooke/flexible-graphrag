@@ -56,11 +56,19 @@ class FlexibleGraphRAGBackend:
                 return {"success": True, "message": f"Ingested documents from {len(cleaned_paths)} paths"}
                 
             elif data_source == "cmis":
-                await self.system.ingest_cmis()
+                cmis_config = kwargs.get('cmis_config')
+                if cmis_config:
+                    await self.system.ingest_cmis(cmis_config)
+                else:
+                    await self.system.ingest_cmis()
                 return {"success": True, "message": "Ingested documents from CMIS"}
                 
             elif data_source == "alfresco":
-                await self.system.ingest_alfresco()
+                alfresco_config = kwargs.get('alfresco_config')
+                if alfresco_config:
+                    await self.system.ingest_alfresco(alfresco_config)
+                else:
+                    await self.system.ingest_alfresco()
                 return {"success": True, "message": "Ingested documents from Alfresco"}
                 
             else:
@@ -77,6 +85,17 @@ class FlexibleGraphRAGBackend:
             return {"success": True, "results": results}
         except Exception as e:
             logger.error(f"Error during search: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def qa_query(self, query: str) -> Dict[str, Any]:
+        """Answer a question using the Q&A system"""
+        try:
+            query_engine = self.system.get_query_engine()
+            response = await query_engine.aquery(query)
+            answer = str(response)
+            return {"success": True, "answer": answer}
+        except Exception as e:
+            logger.error(f"Error during Q&A query: {str(e)}")
             return {"success": False, "error": str(e)}
     
     async def query_documents(self, query: str, top_k: int = 10) -> Dict[str, Any]:

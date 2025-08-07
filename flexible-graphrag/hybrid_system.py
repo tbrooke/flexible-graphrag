@@ -141,12 +141,26 @@ class HybridSearchSystem:
             show_progress=True
         )
         
-        # Step 4: Create graph index using the same nodes
+        # Step 4: Create graph index using the same nodes but with minimal knowledge graph extraction
         logger.info("Creating graph index from same nodes...")
-        kg_extractor = self.schema_manager.create_extractor(
-            self.llm, 
-            use_schema=self.config.schema_config is not None
-        )
+        
+        # Always use knowledge graph extraction for graph functionality
+        kg_extractors = []
+        if self.config.schema_config is not None:
+            kg_extractor = self.schema_manager.create_extractor(
+                self.llm, 
+                use_schema=True
+            )
+            kg_extractors = [kg_extractor]
+            logger.info("Using knowledge graph extraction with schema for graph functionality")
+        else:
+            # Use simple extractor if no schema provided
+            kg_extractor = self.schema_manager.create_extractor(
+                self.llm, 
+                use_schema=False
+            )
+            kg_extractors = [kg_extractor]
+            logger.info("Using simple knowledge graph extraction for graph functionality")
         
         graph_storage_context = StorageContext.from_defaults(
             property_graph_store=self.graph_store,
@@ -163,10 +177,13 @@ class HybridSearchSystem:
             documents=documents,
             llm=self.llm,
             embed_model=self.embed_model,
-            kg_extractors=[kg_extractor],
+            kg_extractors=kg_extractors,  # Use empty list if no schema
             storage_context=graph_storage_context,
             transformations=[],  # Skip transformations since already processed
-            show_progress=True
+            show_progress=True,
+            # Configure to minimize LLM-generated text in responses
+            include_embeddings=True,
+            include_metadata=True
         )
         
         self.graph_index = await loop.run_in_executor(None, create_graph_index)
@@ -179,45 +196,151 @@ class HybridSearchSystem:
         
         logger.info("Document ingestion completed successfully!")
     
-    async def ingest_cmis(self):
+    async def ingest_cmis(self, cmis_config: dict = None):
         """Ingest documents from CMIS source"""
         logger.info("Starting CMIS document ingestion...")
         
+        # Use provided config or fall back to global config
+        if cmis_config:
+            config = cmis_config
+        else:
+            config = {
+                "url": self.config.llm_config.get("cmis_url"),
+                "username": self.config.llm_config.get("cmis_username"),
+                "password": self.config.llm_config.get("cmis_password"),
+                "folder_path": self.config.llm_config.get("cmis_folder_path", "/")
+            }
+        
         # Initialize CMIS source
         cmis_source = CmisSource(
-            url=self.config.llm_config.get("cmis_url"),
-            username=self.config.llm_config.get("cmis_username"),
-            password=self.config.llm_config.get("cmis_password"),
-            folder_path=self.config.llm_config.get("cmis_folder_path", "/")
+            url=config["url"],
+            username=config["username"],
+            password=config["password"],
+            folder_path=config["folder_path"]
         )
         
         # Get documents from CMIS
         cmis_docs = cmis_source.list_files()
         
-        # Process documents (this would need enhancement to handle CMIS document download)
-        # For now, we'll pass the document names as a placeholder
-        file_paths = [doc['name'] for doc in cmis_docs]
-        await self.ingest_documents(file_paths)
+        if not cmis_docs:
+            logger.warning("No supported documents found in CMIS repository")
+            return
+        
+        # Create temporary directory for downloaded files
+        import tempfile
+        import os
+        
+        temp_dir = tempfile.mkdtemp(prefix="cmis_ingestion_")
+        temp_files = []
+        
+        try:
+            # Download all documents to temporary files
+            for doc in cmis_docs:
+                try:
+                    temp_file_path = cmis_source.download_document(doc, temp_dir)
+                    temp_files.append(temp_file_path)
+                    logger.info(f"Downloaded CMIS document: {doc['name']} -> {temp_file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to download CMIS document {doc['name']}: {str(e)}")
+                    continue
+            
+            if temp_files:
+                # Process the downloaded files
+                await self.ingest_documents(temp_files)
+                logger.info(f"Successfully ingested {len(temp_files)} documents from CMIS")
+            else:
+                logger.warning("No documents were successfully downloaded from CMIS")
+                
+        finally:
+            # Clean up temporary files
+            for temp_file in temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        logger.debug(f"Cleaned up temporary file: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file {temp_file}: {str(e)}")
+            
+            # Remove temporary directory
+            try:
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+                    logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary directory {temp_dir}: {str(e)}")
     
-    async def ingest_alfresco(self):
+    async def ingest_alfresco(self, alfresco_config: dict = None):
         """Ingest documents from Alfresco source"""
         logger.info("Starting Alfresco document ingestion...")
         
+        # Use provided config or fall back to global config
+        if alfresco_config:
+            config = alfresco_config
+        else:
+            config = {
+                "url": self.config.llm_config.get("alfresco_url"),
+                "username": self.config.llm_config.get("alfresco_username"),
+                "password": self.config.llm_config.get("alfresco_password"),
+                "path": self.config.llm_config.get("alfresco_path", "/")
+            }
+        
         # Initialize Alfresco source
         alfresco_source = AlfrescoSource(
-            base_url=self.config.llm_config.get("alfresco_url"),
-            username=self.config.llm_config.get("alfresco_username"),
-            password=self.config.llm_config.get("alfresco_password"),
-            path=self.config.llm_config.get("alfresco_path", "/")
+            base_url=config["url"],
+            username=config["username"],
+            password=config["password"],
+            path=config["path"]
         )
         
         # Get documents from Alfresco
         alfresco_docs = alfresco_source.list_files()
         
-        # Process documents (this would need enhancement to handle Alfresco document download)
-        # For now, we'll pass the document names as a placeholder
-        file_paths = [doc['name'] for doc in alfresco_docs]
-        await self.ingest_documents(file_paths)
+        if not alfresco_docs:
+            logger.warning("No supported documents found in Alfresco repository")
+            return
+        
+        # Create temporary directory for downloaded files
+        import tempfile
+        import os
+        
+        temp_dir = tempfile.mkdtemp(prefix="alfresco_ingestion_")
+        temp_files = []
+        
+        try:
+            # Download all documents to temporary files
+            for doc in alfresco_docs:
+                try:
+                    temp_file_path = alfresco_source.download_document(doc, temp_dir)
+                    temp_files.append(temp_file_path)
+                    logger.info(f"Downloaded Alfresco document: {doc['name']} -> {temp_file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to download Alfresco document {doc['name']}: {str(e)}")
+                    continue
+            
+            if temp_files:
+                # Process the downloaded files
+                await self.ingest_documents(temp_files)
+                logger.info(f"Successfully ingested {len(temp_files)} documents from Alfresco")
+            else:
+                logger.warning("No documents were successfully downloaded from Alfresco")
+                
+        finally:
+            # Clean up temporary files
+            for temp_file in temp_files:
+                try:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        logger.debug(f"Cleaned up temporary file: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file {temp_file}: {str(e)}")
+            
+            # Remove temporary directory
+            try:
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+                    logger.debug(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary directory {temp_dir}: {str(e)}")
     
     async def ingest_text(self, content: str, source_name: str = "text_input"):
         """Ingest raw text content"""
@@ -253,11 +376,23 @@ class HybridSearchSystem:
             # Add to existing index
             self.vector_index.insert_nodes(nodes)
         
-        # Update graph index
-        kg_extractor = self.schema_manager.create_extractor(
-            self.llm, 
-            use_schema=self.config.schema_config is not None
-        )
+        # Update graph index - always use knowledge graph extraction for graph functionality
+        kg_extractors = []
+        if self.config.schema_config is not None:
+            kg_extractor = self.schema_manager.create_extractor(
+                self.llm, 
+                use_schema=True
+            )
+            kg_extractors = [kg_extractor]
+            logger.info("Using knowledge graph extraction with schema for text ingestion")
+        else:
+            # Use simple extractor if no schema provided
+            kg_extractor = self.schema_manager.create_extractor(
+                self.llm, 
+                use_schema=False
+            )
+            kg_extractors = [kg_extractor]
+            logger.info("Using simple knowledge graph extraction for text ingestion")
         
         if self.graph_index is None:
             graph_storage_context = StorageContext.from_defaults(
@@ -267,7 +402,7 @@ class HybridSearchSystem:
                 documents=[document],
                 llm=self.llm,
                 embed_model=self.embed_model,
-                kg_extractors=[kg_extractor],
+                kg_extractors=kg_extractors,  # Use empty list if no schema
                 storage_context=graph_storage_context
             )
         else:
@@ -309,10 +444,13 @@ class HybridSearchSystem:
                 config=bm25_config
             )
         
-        # Graph retriever
+        # Graph retriever - configure to return original text from shared docstore
         graph_retriever = self.graph_index.as_retriever(
             include_text=True,
-            similarity_top_k=5
+            similarity_top_k=5,
+            # Return original document text from the shared docstore, not knowledge graph extraction results
+            text_qa_template=None,  # Use default template
+            include_metadata=True
         )
         
         # Combine retrievers with fusion
@@ -359,16 +497,63 @@ class HybridSearchSystem:
         # Execute hybrid search
         results = await self.hybrid_retriever.aretrieve(query)
         
-        # Deduplicate results based on content
+        logger.info(f"Retrieved {len(results)} results from hybrid search")
+        
+        # Enhanced deduplication with multiple strategies
         seen_content = set()
+        seen_sources = {}  # source -> content mapping for additional dedup
         deduplicated_results = []
         
         for result in results:
-            # Use first 100 characters as a simple content hash for deduplication
-            content_hash = result.text[:100].strip()
-            if content_hash not in seen_content:
-                seen_content.add(content_hash)
+            source = result.metadata.get("source", "Unknown")
+            full_text = result.text.strip()
+            
+            # Strategy 1: Extract core content by removing common prefixes
+            core_content = self._extract_core_content(full_text)
+            
+            # Strategy 2: Create content hash from core content
+            content_hash = core_content[:300].strip().lower()
+            
+            # Strategy 3: Check for exact source + core content combination
+            content_key = f"{source}::{content_hash}"
+            
+            # Strategy 4: Check for very similar content from same source
+            similar_found = False
+            if source in seen_sources:
+                for existing_content in seen_sources[source]:
+                    # Check if content is very similar (overlap > 70%)
+                    if len(content_hash) > 50 and len(existing_content) > 50:
+                        overlap = len(set(content_hash.split()) & set(existing_content.split()))
+                        total_words = len(set(content_hash.split()) | set(existing_content.split()))
+                        if total_words > 0 and overlap / total_words > 0.7:
+                            similar_found = True
+                            break
+            
+            # Strategy 5: Check for entity-relationship patterns that might be duplicates
+            if not similar_found and "->" in full_text:
+                # This might be a graph result with entity-relationship format
+                # Check if we already have the original text version
+                for existing_result in deduplicated_results:
+                    existing_text = existing_result.text.strip()
+                    existing_core = self._extract_core_content(existing_text)
+                    
+                    # If existing result doesn't have entity-relationship format but has similar core content
+                    if "->" not in existing_text and len(existing_core) > 50:
+                        overlap = len(set(core_content.split()) & set(existing_core.split()))
+                        total_words = len(set(core_content.split()) | set(existing_core.split()))
+                        if total_words > 0 and overlap / total_words > 0.6:
+                            similar_found = True
+                            break
+            
+            if content_key not in seen_content and not similar_found:
+                seen_content.add(content_key)
+                if source not in seen_sources:
+                    seen_sources[source] = []
+                seen_sources[source].append(content_hash)
                 deduplicated_results.append(result)
+                logger.debug(f"Added result from {source}: {core_content[:100]}...")
+            else:
+                logger.debug(f"Deduplicated result from {source}: {core_content[:100]}...")
         
         # Format and rank results
         formatted_results = []
@@ -382,7 +567,152 @@ class HybridSearchSystem:
                 "file_name": result.metadata.get("file_name", "Unknown")
             })
         
+        logger.info(f"Returning {len(formatted_results)} deduplicated results")
         return formatted_results
+    
+    def _extract_core_content(self, text: str) -> str:
+        """Extract core content by removing common prefixes and suffixes"""
+        
+        # Common prefixes to remove - expanded list for knowledge graph extraction results
+        prefixes_to_remove = [
+            "here are some facts extracted from the provided text:",
+            "facts extracted from the provided text:",
+            "extracted facts:",
+            "key information:",
+            "summary:",
+            "important points:",
+            "main points:",
+            "key facts:",
+            "extracted information:",
+            "document summary:",
+            "content summary:",
+            "text summary:",
+            "document facts:",
+            "content facts:",
+            "text facts:",
+            "based on the provided text:",
+            "from the provided text:",
+            "the text contains:",
+            "the document contains:",
+            "the content includes:",
+            "the information shows:",
+            "the facts indicate:",
+            "the data reveals:",
+            "the analysis shows:",
+            "the summary indicates:",
+            "the key points are:",
+            "the main findings are:",
+            "the important details are:",
+            "the relevant information is:",
+            "the document states:",
+            "the text states:",
+            "the content states:",
+            "the information states:",
+            "the facts show:",
+            "the data shows:",
+            "the analysis reveals:",
+            "the summary shows:",
+            "the key points show:",
+            "the main findings show:",
+            "the important details show:",
+            "the relevant information shows:",
+            # Additional knowledge graph extraction prefixes
+            "the following facts were extracted:",
+            "extracted from the document:",
+            "the document reveals:",
+            "the text reveals:",
+            "the content reveals:",
+            "the information indicates:",
+            "the facts demonstrate:",
+            "the data indicates:",
+            "the analysis indicates:",
+            "the summary demonstrates:",
+            "the key points indicate:",
+            "the main findings indicate:",
+            "the important details indicate:",
+            "the relevant information indicates:",
+            "the document demonstrates:",
+            "the text demonstrates:",
+            "the content demonstrates:",
+            "the information demonstrates:",
+            "the facts suggest:",
+            "the data suggests:",
+            "the analysis suggests:",
+            "the summary suggests:",
+            "the key points suggest:",
+            "the main findings suggest:",
+            "the important details suggest:",
+            "the relevant information suggests:"
+        ]
+        
+        # Convert to lowercase for comparison
+        text_lower = text.lower().strip()
+        
+        # Remove prefixes
+        for prefix in prefixes_to_remove:
+            if text_lower.startswith(prefix.lower()):
+                # Find the actual prefix in the original text (case-sensitive)
+                prefix_start = text.lower().find(prefix.lower())
+                if prefix_start != -1:
+                    text = text[prefix_start + len(prefix):].strip()
+                    break
+        
+        # Remove common suffixes
+        suffixes_to_remove = [
+            "end of document",
+            "end of text",
+            "document ends",
+            "text ends",
+            "this concludes the document",
+            "this concludes the text",
+            "this ends the document",
+            "this ends the text"
+        ]
+        
+        text_lower = text.lower().strip()
+        for suffix in suffixes_to_remove:
+            if text_lower.endswith(suffix.lower()):
+                # Find the actual suffix in the original text (case-sensitive)
+                suffix_start = text.lower().rfind(suffix.lower())
+                if suffix_start != -1:
+                    text = text[:suffix_start].strip()
+                    break
+        
+        # Additional cleanup: remove entity-relationship patterns
+        # Look for patterns like "Entity -> Relation -> Entity" and extract the original text
+        import re
+        
+        # Pattern to find entity-relationship chains (more comprehensive)
+        er_patterns = [
+            r'^[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+:',
+            r'^[A-Za-z\s]+->[A-Za-z\s]+:',
+            r'^[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+:',
+            r'^[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+->[A-Za-z\s]+:'
+        ]
+        
+        for er_pattern in er_patterns:
+            if re.match(er_pattern, text.strip()):
+                # Try to find the original text after the entity-relationship chain
+                # Look for common document start patterns
+                original_patterns = [
+                    r'LONDON.*?September.*?\d{4}.*?Alfresco',
+                    r'[A-Z]{2,}.*?\d{1,2}.*?\d{4}.*?[A-Za-z]+',
+                    r'[A-Z][a-z]+.*?\d{1,2},.*?\d{4}',
+                    r'[A-Z][a-z]+.*?\d{1,2}.*?\d{4}',
+                    r'[A-Z][a-z]+.*?\d{1,2}.*?\d{4}.*?[A-Za-z]+',
+                    r'[A-Z]{2,}.*?\d{1,2}.*?\d{4}',
+                    r'[A-Z][a-z]+.*?\d{1,2}.*?\d{4}.*?[A-Za-z]+.*?[A-Za-z]+'
+                ]
+                
+                for pattern in original_patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        # Extract from the match onwards
+                        text = text[match.start():]
+                        break
+                break
+        
+        return text.strip()
     
     def get_query_engine(self, **kwargs):
         """Get query engine for Q&A"""

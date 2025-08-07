@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     # Optional schema
     schema_config: Optional[Dict[str, Any]] = None
     
+    # Knowledge graph extraction control
+    enable_knowledge_graph: bool = Field(True, description="Enable knowledge graph extraction for graph functionality")
+    
     # Database connection parameters
     vector_db_config: Dict[str, Any] = {}
     graph_db_config: Dict[str, Any] = {}

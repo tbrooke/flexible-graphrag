@@ -4,13 +4,42 @@ A configurable hybrid search system that combines full-text search, vector searc
 
 ## 🚀 Features
 
-- **Multiple Data Sources**: File system (PDF, DOCX, PPTX, TXT, MD), CMIS, and Alfresco repositories
+- **Multiple Data Sources**: File system, CMIS, and Alfresco repositories
 - **Hybrid Search**: Vector similarity, BM25 full-text, and graph traversal
 - **Configurable Backends**: Neo4j, Qdrant, Elasticsearch, OpenSearch support
 - **Multiple LLM Providers**: OpenAI, Ollama, Gemini, Azure OpenAI, Anthropic
-- **Document Processing**: Advanced PDF/DOCX processing with Docling
+- **Advanced Document Processing**: Comprehensive file format support with intelligent processing
 - **Schema Support**: Optional entity/relationship schema enforcement
 - **FastAPI Backend**: REST API with configurable data sources
+
+## 📄 Supported File Formats
+
+This project supports a comprehensive range of document formats through intelligent processing:
+
+### Document Formats (Processed with Docling)
+- **PDF Documents**: `.pdf` - Advanced layout analysis with table and formula extraction
+- **Microsoft Office (Modern)**: 
+  - Word: `.docx` - Full document structure preservation
+  - Excel: `.xlsx` - Spreadsheet data and table extraction
+  - PowerPoint: `.pptx` - Slide content and layout analysis
+
+### Text & Markup Formats
+- **Plain Text**: `.txt` - Direct text processing (no Docling conversion)
+- **Markdown**: `.md`, `.markdown` - Direct text processing (no Docling conversion)
+- **Web Formats**: `.html`, `.htm`, `.xhtml` - Processed with Docling for structure
+- **Data Formats**: `.csv`, `.xml`, `.json` - Processed with Docling for structured data
+- **Documentation**: `.asciidoc`, `.adoc` - Processed with Docling for markup preservation
+
+### Image Formats (Processed with Docling OCR)
+- **Common Images**: `.png`, `.jpg`, `.jpeg` - Text extraction via OCR
+- **Professional Images**: `.tiff`, `.tif`, `.bmp`, `.webp` - OCR with layout analysis
+
+### Processing Intelligence
+- **Adaptive Output**: Docling automatically converts to **markdown** when tables are detected, **plain text** for better entity extraction
+- **Table Preservation**: Complex table structures maintained in markdown format
+- **Formula Recognition**: Mathematical formulas and equations properly extracted
+- **Layout Analysis**: Document structure, headers, and formatting preserved
+- **OCR Integration**: Text extraction from images and scanned documents
 
 ## 🏗️ Architecture
 
@@ -108,13 +137,13 @@ See `env-sample.txt` for complete configuration options.
 
 ### 1. Document Ingestion
 
-#### File System (supports PDF, DOCX, PPTX, TXT, MD)
+#### File System (supports 12+ file formats)
 ```bash
 curl -X POST "http://localhost:8000/api/ingest" \
   -H "Content-Type: application/json" \
   -d '{
     "data_source": "filesystem",
-    "paths": ["./documents", "./reports/quarterly.pdf"]
+    "paths": ["./documents", "./reports/quarterly.pdf", "./data/spreadsheet.xlsx"]
   }'
 ```
 

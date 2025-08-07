@@ -27,13 +27,13 @@ export class ProcessFolderComponent implements OnInit {
       dataSource: ['filesystem', Validators.required],
       folderPath: [''],
       // CMIS fields
-      cmisUrl: [''],
-      cmisUsername: [''],
-      cmisPassword: [''],
+      cmisUrl: ['http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom'],
+      cmisUsername: ['admin'],
+      cmisPassword: ['admin'],
       // Alfresco fields
-      alfrescoUrl: [''],
-      alfrescoUsername: [''],
-      alfrescoPassword: ['']
+      alfrescoUrl: ['http://localhost:8080/alfresco'],
+      alfrescoUsername: ['admin'],
+      alfrescoPassword: ['admin']
     });
 
     // Set up conditional validators

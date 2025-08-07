@@ -24,8 +24,19 @@ class DocumentProcessor:
             )
         )
         
+        # Configure all supported Docling formats
         self.converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF, InputFormat.DOCX, InputFormat.PPTX],
+            allowed_formats=[
+                InputFormat.PDF,
+                InputFormat.DOCX, 
+                InputFormat.PPTX,
+                InputFormat.HTML,
+                InputFormat.IMAGE,
+                InputFormat.XLSX,
+                InputFormat.MD,
+                InputFormat.ASCIIDOC,
+                InputFormat.CSV
+            ],
             format_options={
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)
             }
@@ -45,8 +56,14 @@ class DocumentProcessor:
                     logger.warning(f"File does not exist: {file_path}")
                     continue
                 
-                # Check if it's a supported file type
-                if path_obj.suffix.lower() in ['.pdf', '.docx', '.pptx']:
+                # Check if it's a supported file type by Docling
+                docling_extensions = [
+                    '.pdf', '.docx', '.xlsx', '.pptx',
+                    '.html', '.htm', '.md', '.markdown', '.asciidoc', '.adoc',
+                    '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp', '.webp',
+                    '.csv', '.xml', '.json'
+                ]
+                if path_obj.suffix.lower() in docling_extensions:
                     logger.info(f"Converting document with Docling: {file_path}")
                     # Convert using Docling
                     result = self.converter.convert(str(file_path))

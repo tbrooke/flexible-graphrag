@@ -25,9 +25,9 @@ export default defineComponent({
     QueryForm,
   },
   methods: {
-    onFolderProcessed(event: { path: string }) {
-      console.log('Folder was processed:', event.path);
-      // You can add any additional logic here when a folder is processed
+    onFolderProcessed(event: { dataSource: string, path?: string }) {
+      console.log('Documents processed:', event);
+      // You can add any additional logic here when documents are processed
     }
   }
 });
