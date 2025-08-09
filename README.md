@@ -77,7 +77,7 @@ Current configuration supports (via LlamaIndex abstractions, can be extended to 
 ### Graph Databases  
 Current configuration supports (via LlamaIndex abstractions, can be extended to cover others that LlamaIndex supports):
 - **Neo4j Property Graph**: Primary knowledge graph storage with Cypher querying
-- **Kuzu**: High-performance in-memory graph database for analytics
+- **Kuzu**: Embedded graph database built for query speed and scalability, optimized for handling complex analytical workloads on very large graph databases. Supports the property graph data model and the Cypher query language
 
 ### Search Engines
 - **BM25 (Built-in)**: LlamaIndex native full-text search (no external dependencies)
