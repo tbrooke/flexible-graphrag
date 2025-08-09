@@ -13,7 +13,7 @@ try:
     except ImportError:
         get_node_sync = None
         list_node_children_sync = None
-        logging.warning("Direct node API functions not available, will use CMIS fallback")
+        logging.info("Using hybrid approach: python-alfresco-api + CMIS for path-based operations")
 except ImportError:
     ClientFactory = None
     get_node_sync = None

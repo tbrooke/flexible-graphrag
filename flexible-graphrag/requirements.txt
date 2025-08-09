@@ -5,6 +5,7 @@ fastmcp
 python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv
+nest-asyncio
 cmislib
 python-alfresco-api==1.1.1
 docling

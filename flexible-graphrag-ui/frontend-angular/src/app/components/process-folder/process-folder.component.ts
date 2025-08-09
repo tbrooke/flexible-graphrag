@@ -1,9 +1,11 @@
-import { Component, EventEmitter, Output, OnInit } from '@angular/core';
+import { Component, EventEmitter, Output, OnInit, OnDestroy } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { finalize } from 'rxjs/operators';
+import { finalize, switchMap, takeWhile, takeUntil } from 'rxjs/operators';
+import { Subject, interval } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { EnvService } from '../../services/env.service';
+import { AsyncProcessingResponse, ProcessingStatusResponse } from '../../models/api.models';
 
 @Component({
   selector: 'app-process-folder',
@@ -11,11 +13,21 @@ import { EnvService } from '../../services/env.service';
   styleUrls: ['./process-folder.component.scss'],
   standalone: false
 })
-export class ProcessFolderComponent implements OnInit {
+export class ProcessFolderComponent implements OnInit, OnDestroy {
   @Output() processed = new EventEmitter<{ dataSource: string, path?: string }>();
   
   form: FormGroup;
   isProcessing = false;
+  processingStatus = '';
+  processingProgress = 0;
+  currentProcessingId: string | null = null;
+  statusData: any = null;
+  
+  // In-window messages instead of popups
+  successMessage = '';
+  errorMessage = '';
+  
+  private destroy$ = new Subject<void>();
 
   constructor(
     private fb: FormBuilder,
@@ -126,27 +138,136 @@ export class ProcessFolderComponent implements OnInit {
     }
 
     this.apiService.ingestDocuments(request)
-      .pipe(
-        finalize(() => this.isProcessing = false)
-      )
       .subscribe({
-        next: () => {
-          this.snackBar.open('Documents ingested successfully!', 'Close', {
-            duration: 3000,
-            panelClass: ['success-snackbar']
-          });
-          this.processed.emit({ 
-            dataSource: formValue.dataSource, 
-            path: formValue.folderPath 
-          });
+        next: (response: AsyncProcessingResponse) => {
+          if (response.status === 'started') {
+            this.processingStatus = response.message;
+            this.processingProgress = 0;
+            this.currentProcessingId = response.processing_id;
+            
+            // Show success message in-window instead of popup
+            this.successMessage = `Processing started: ${response.estimated_time || 'Please wait...'}`;
+            this.errorMessage = '';
+            
+            this.pollProcessingStatus(response.processing_id, formValue);
+          } else if (response.status === 'completed') {
+            this.handleProcessingComplete(formValue);
+          } else if (response.status === 'failed') {
+            this.handleProcessingError(response.error || 'Processing failed');
+          }
         },
         error: (error) => {
-          this.snackBar.open(
-            error.message || 'Error ingesting documents',
-            'Close',
-            { duration: 5000, panelClass: ['error-snackbar'] }
-          );
+          this.handleProcessingError(error.message || 'Error starting document processing');
         }
       });
+  }
+
+  private pollProcessingStatus(processingId: string, formValue: any): void {
+    // Poll every 2 seconds
+    interval(2000)
+      .pipe(
+        switchMap(() => this.apiService.getProcessingStatus(processingId)),
+        takeWhile((status: ProcessingStatusResponse) => 
+          status.status === 'started' || status.status === 'processing', true
+        ),
+        takeUntil(this.destroy$)
+      )
+      .subscribe({
+        next: (status: ProcessingStatusResponse) => {
+          this.processingStatus = status.message;
+          this.processingProgress = status.progress;
+          this.statusData = status;  // Store full status for enhanced progress display
+          
+          // Clear initial "processing started" message once real progress updates begin
+          if (this.successMessage.startsWith('Processing started:') && status.progress > 0) {
+            this.successMessage = '';
+          }
+          
+          if (status.status === 'completed') {
+            this.handleProcessingComplete(formValue);
+          } else if (status.status === 'failed') {
+            this.handleProcessingError(status.error || 'Processing failed');
+          } else if (status.status === 'cancelled') {
+            this.handleProcessingCancelled();
+          }
+        },
+        error: (error: any) => {
+          this.handleProcessingError('Error checking processing status: ' + error.message);
+        }
+      });
+  }
+
+  private handleProcessingComplete(formValue: any): void {
+    this.isProcessing = false;
+    this.processingStatus = '';
+    this.processingProgress = 0;
+    this.currentProcessingId = null;
+    
+    // Show success message in-window instead of popup
+    this.successMessage = 'Documents ingested successfully!';
+    this.errorMessage = '';
+    
+    this.processed.emit({ 
+      dataSource: formValue.dataSource, 
+      path: formValue.folderPath 
+    });
+  }
+
+  private handleProcessingError(errorMessage: string): void {
+    this.isProcessing = false;
+    this.processingStatus = '';
+    this.processingProgress = 0;
+    this.currentProcessingId = null;
+    
+    // Show error message in-window instead of popup
+    this.errorMessage = errorMessage;
+    this.successMessage = '';
+  }
+
+  private handleProcessingCancelled(): void {
+    this.isProcessing = false;
+    this.processingStatus = '';
+    this.processingProgress = 0;
+    this.currentProcessingId = null;
+    
+    // Show cancellation message in-window with auto-clear
+    this.successMessage = 'Processing cancelled successfully';
+    this.errorMessage = '';
+    
+    // Auto-clear the cancellation message after 5 seconds
+    setTimeout(() => {
+      if (this.successMessage === 'Processing cancelled successfully') {
+        this.successMessage = '';
+      }
+    }, 5000);
+  }
+
+  cancelProcessing(): void {
+    if (!this.currentProcessingId) return;
+    
+    this.apiService.cancelProcessing(this.currentProcessingId).subscribe({
+      next: (response: any) => {
+        if (response.success) {
+          // Success will be handled by the polling status check
+        } else {
+          this.errorMessage = 'Failed to cancel processing';
+          this.successMessage = '';
+        }
+      },
+      error: (error: any) => {
+        console.error('Error cancelling processing:', error);
+        this.errorMessage = 'Error cancelling processing';
+        this.successMessage = '';
+      }
+    });
+  }
+
+  getFileName(filePath: string): string {
+    return filePath.split(/[/\\]/).pop() || filePath;
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }

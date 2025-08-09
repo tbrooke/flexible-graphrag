@@ -106,6 +106,57 @@
         ></v-text-field>
       </template>
 
+      <!-- Processing Status -->
+      <template v-if="isProcessing">
+        <v-card
+          color="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          <v-card-text>
+            <div class="d-flex align-center mb-2">
+              <v-progress-circular
+                indeterminate
+                size="20"
+                class="me-2"
+              ></v-progress-circular>
+              <span>{{ processingStatus || 'Processing documents...' }}</span>
+            </div>
+            <v-progress-linear
+              :model-value="processingProgress"
+              height="8"
+              rounded
+              color="primary"
+              class="mb-2"
+            ></v-progress-linear>
+            <div class="text-caption text-medium-emphasis">
+              {{ processingProgress }}% complete
+              <div v-if="statusData?.file_progress" class="mt-1">
+                {{ statusData.file_progress }}
+              </div>
+              <div v-if="statusData?.current_file" class="mt-1">
+                Processing: {{ getFileName(statusData.current_file) }}
+              </div>
+              <div v-if="statusData?.current_phase" class="mt-1">
+                Phase: {{ statusData.current_phase }}
+              </div>
+              <div v-if="statusData?.estimated_time_remaining" class="mt-1">
+                Time remaining: {{ statusData.estimated_time_remaining }}
+              </div>
+            </div>
+            <v-btn
+              variant="outlined"
+              color="error"
+              size="small"
+              @click="cancelProcessing"
+              class="mt-2"
+            >
+              Cancel Processing
+            </v-btn>
+          </v-card-text>
+        </v-card>
+      </template>
+
       <v-btn
         color="primary"
         @click="handleProcessFolder"
@@ -113,7 +164,7 @@
         :loading="isProcessing"
         size="large"
       >
-        Ingest Documents
+        {{ isProcessing ? 'Processing...' : 'Ingest Documents' }}
       </v-btn>
 
       <v-alert
@@ -138,29 +189,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
-
-interface IngestRequest {
-  data_source: string;
-  paths?: string[];
-  cmis_config?: {
-    url: string;
-    username: string;
-    password: string;
-    folder_path: string;
-  };
-  alfresco_config?: {
-    url: string;
-    username: string;
-    password: string;
-    path: string;
-  };
-}
-
-interface ApiResponse {
-  status: string;
-  message?: string;
-  error?: string;
-}
+import { IngestRequest, AsyncProcessingResponse, ProcessingStatusResponse } from '../types/api';
 
 const emit = defineEmits<{
   (e: 'processed', payload: { dataSource: string, path?: string }): void;
@@ -194,6 +223,10 @@ const alfrescoPassword = ref('admin');
 const isProcessing = ref(false);
 const error = ref('');
 const success = ref('');
+const processingStatus = ref('');
+const processingProgress = ref(0);
+const currentProcessingId = ref<string | null>(null);
+const statusData = ref<any>(null);
 
 // Computed property for form validation
 const isFormValid = computed(() => {
@@ -219,7 +252,58 @@ const isFormValid = computed(() => {
 watch(dataSource, () => {
   error.value = '';
   success.value = '';
+  processingStatus.value = '';
+  processingProgress.value = 0;
 });
+
+// Helper function to extract filename from path
+const getFileName = (filePath: string): string => {
+  return filePath.split(/[/\\]/).pop() || filePath;
+};
+
+// Polling function for processing status
+const pollProcessingStatus = async (processingId: string): Promise<void> => {
+  try {
+    const response = await axios.get<ProcessingStatusResponse>(`/api/processing-status/${processingId}`);
+    const status = response.data;
+    
+    processingStatus.value = status.message;
+    processingProgress.value = status.progress;
+    statusData.value = status;  // Store full status for enhanced progress display
+    
+    if (status.status === 'completed') {
+      isProcessing.value = false;
+      processingStatus.value = '';
+      processingProgress.value = 0;
+      currentProcessingId.value = null;
+      success.value = 'Documents ingested successfully!';
+      emit('processed', { 
+        dataSource: dataSource.value, 
+        path: folderPath.value 
+      });
+    } else if (status.status === 'failed') {
+      isProcessing.value = false;
+      processingStatus.value = '';
+      processingProgress.value = 0;
+      currentProcessingId.value = null;
+      error.value = status.error || 'Processing failed';
+    } else if (status.status === 'cancelled') {
+      isProcessing.value = false;
+      processingStatus.value = '';
+      processingProgress.value = 0;
+      currentProcessingId.value = null;
+      success.value = 'Processing cancelled successfully';
+    } else if (status.status === 'started' || status.status === 'processing') {
+      // Continue polling
+      setTimeout(() => pollProcessingStatus(processingId), 2000);
+    }
+  } catch (err: any) {
+    console.error('Error checking processing status:', err);
+    error.value = 'Error checking processing status';
+    isProcessing.value = false;
+    currentProcessingId.value = null;
+  }
+};
 
 const processFolder = async (): Promise<boolean> => {
   if (!isFormValid.value || isProcessing.value) return false;
@@ -255,10 +339,7 @@ const processFolder = async (): Promise<boolean> => {
       };
     }
     
-    const response = await axios({
-      method: 'post',
-      url: '/api/ingest',
-      data: request,
+    const response = await axios.post<AsyncProcessingResponse>('/api/ingest', request, {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
@@ -267,15 +348,27 @@ const processFolder = async (): Promise<boolean> => {
     
     console.log('Response received:', response);
     
-    if (response.data.status === 'success') {
-      success.value = response.data.message || 'Documents ingested successfully!';
+    // Handle async processing response
+    if (response.data.status === 'started') {
+      processingStatus.value = response.data.message;
+      processingProgress.value = 0;
+      currentProcessingId.value = response.data.processing_id;
+      success.value = `Processing started: ${response.data.estimated_time || 'Please wait...'}`;
+      // Start polling for status
+      setTimeout(() => pollProcessingStatus(response.data.processing_id), 2000);
+      return true;
+    } else if (response.data.status === 'completed') {
+      success.value = 'Documents ingested successfully!';
       emit('processed', { 
         dataSource: dataSource.value, 
         path: folderPath.value 
       });
       return true;
+    } else if (response.data.status === 'failed') {
+      error.value = response.data.error || 'Processing failed';
+      return false;
     } else {
-      error.value = response.data.error || response.data.message || 'Error ingesting documents';
+      error.value = response.data.error || 'Unknown processing status';
       return false;
     }
   } catch (err: any) {
@@ -286,9 +379,29 @@ const processFolder = async (): Promise<boolean> => {
       headers: err.response?.headers
     });
     error.value = err.response?.data?.detail || err.response?.data?.error || 'Error processing documents';
-    return false;
-  } finally {
     isProcessing.value = false;
+    currentProcessingId.value = null;
+    return false;
+  }
+};
+
+const cancelProcessing = async (): Promise<void> => {
+  if (!currentProcessingId.value) return;
+  
+  try {
+    const response = await axios.post(`/api/cancel-processing/${currentProcessingId.value}`);
+    if (response.data.success) {
+      success.value = 'Processing cancelled successfully';
+      isProcessing.value = false;
+      processingStatus.value = '';
+      processingProgress.value = 0;
+      currentProcessingId.value = null;
+    } else {
+      error.value = 'Failed to cancel processing';
+    }
+  } catch (err: any) {
+    console.error('Error cancelling processing:', err);
+    error.value = 'Error cancelling processing';
   }
 };
 

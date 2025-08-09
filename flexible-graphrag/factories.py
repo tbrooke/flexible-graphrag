@@ -39,7 +39,8 @@ class LLMFactory:
                 model=config.get("model", "gpt-4o-mini"),
                 temperature=config.get("temperature", 0.1),
                 api_key=config.get("api_key"),
-                max_tokens=config.get("max_tokens", 4000)
+                max_tokens=config.get("max_tokens", 4000),
+                request_timeout=config.get("timeout", 120.0)
             )
         
         elif provider == LLMProvider.OLLAMA:
@@ -54,7 +55,8 @@ class LLMFactory:
             return Gemini(
                 model=config.get("model", "models/gemini-1.5-flash"),
                 api_key=config.get("api_key"),
-                temperature=config.get("temperature", 0.1)
+                temperature=config.get("temperature", 0.1),
+                request_timeout=config.get("timeout", 120.0)
             )
         
         elif provider == LLMProvider.AZURE_OPENAI:
@@ -64,14 +66,16 @@ class LLMFactory:
                 temperature=config.get("temperature", 0.1),
                 azure_endpoint=config["azure_endpoint"],
                 api_key=config["api_key"],
-                api_version=config.get("api_version", "2024-02-01")
+                api_version=config.get("api_version", "2024-02-01"),
+                request_timeout=config.get("timeout", 120.0)
             )
         
         elif provider == LLMProvider.ANTHROPIC:
             return Anthropic(
                 model=config.get("model", "claude-3-5-sonnet-20241022"),
                 api_key=config.get("api_key"),
-                temperature=config.get("temperature", 0.1)
+                temperature=config.get("temperature", 0.1),
+                request_timeout=config.get("timeout", 120.0)
             )
         
         else:
@@ -133,7 +137,8 @@ class DatabaseFactory:
                 username=config.get("username", "neo4j"),
                 password=config["password"],
                 url=config.get("url", "bolt://localhost:7687"),
-                embedding_dimension=config.get("embed_dim", 1536)
+                embedding_dimension=config.get("embed_dim", 1536),
+                database=config.get("database", "neo4j")
             )
         
         elif db_type == VectorDBType.ELASTICSEARCH:
@@ -164,7 +169,9 @@ class DatabaseFactory:
             return Neo4jPropertyGraphStore(
                 username=config.get("username", "neo4j"),
                 password=config["password"],
-                url=config.get("url", "bolt://localhost:7687")
+                url=config.get("url", "bolt://localhost:7687"),
+                database=config.get("database", "neo4j"),
+                refresh_schema=False  # Disable APOC schema refresh to avoid apoc.meta.data calls
             )
         
         elif db_type == GraphDBType.KUZU:

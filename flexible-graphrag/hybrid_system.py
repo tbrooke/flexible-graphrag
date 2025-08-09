@@ -49,7 +49,7 @@ class HybridSearchSystem:
     
     def __init__(self, config: AppSettings):
         self.config = config
-        self.document_processor = DocumentProcessor()
+        self.document_processor = DocumentProcessor(config)
         self.schema_manager = SchemaManager(config.schema_config)
         
         # Initialize LLM and embedding models
@@ -104,18 +104,59 @@ class HybridSearchSystem:
         """Create HybridSearchSystem from Settings object"""
         return cls(settings)
     
-    async def ingest_documents(self, file_paths: List[Union[str, Path]]):
+    async def ingest_documents(self, file_paths: List[Union[str, Path]], processing_id: str = None, status_callback=None):
         """Process and ingest documents into all search modalities"""
+        
+        # Helper function to check cancellation
+        def _check_cancellation():
+            if processing_id:
+                from backend import PROCESSING_STATUS
+                return (processing_id in PROCESSING_STATUS and 
+                        PROCESSING_STATUS[processing_id]["status"] == "cancelled")
+            return False
+        
+        # Helper function to update progress with file info
+        def _update_progress(message: str, progress: int, current_file: str = None, current_phase: str = None, files_completed: int = 0):
+            if status_callback:
+                status_callback(
+                    processing_id=processing_id,
+                    status="processing",
+                    message=message,
+                    progress=progress,
+                    current_file=current_file,
+                    current_phase=current_phase,
+                    files_completed=files_completed,
+                    total_files=len(file_paths)
+                )
+        
+        # Check for partial state and clear it before starting new ingestion
+        if (self.vector_index is None) != (self.graph_index is None):
+            logger.warning("Detected partial system state - clearing before new ingestion")
+            self._clear_partial_state()
+        
+        # Also clear if we have partial retriever setup
+        if self.hybrid_retriever is None and (self.vector_index is not None or self.graph_index is not None):
+            logger.warning("Detected incomplete retriever setup - clearing before new ingestion")
+            self._clear_partial_state()
         
         # Step 1: Convert documents using Docling
         logger.info("Converting documents with Docling...")
-        documents = await self.document_processor.process_documents(file_paths)
+        _update_progress("Converting documents with Docling...", 20, current_phase="docling")
+        
+        documents = await self.document_processor.process_documents(file_paths, processing_id=processing_id)
         
         if not documents:
             raise ValueError("No documents were successfully processed")
         
+        # Check for cancellation after document processing
+        if _check_cancellation():
+            logger.info("Processing cancelled during document conversion")
+            raise RuntimeError("Processing cancelled by user")
+        
         # Step 2: Process documents into nodes once
         logger.info("Processing documents into nodes...")
+        _update_progress("Splitting documents into chunks...", 30, current_phase="chunking")
+        
         transformations = [
             SentenceSplitter(
                 chunk_size=self.config.chunk_size,
@@ -128,12 +169,30 @@ class HybridSearchSystem:
         
         # Process documents through transformations to get nodes
         pipeline = IngestionPipeline(transformations=transformations)
-        nodes = pipeline.run(documents=documents)
+        
+        # Use run_in_executor to avoid asyncio conflict
+        import asyncio
+        import functools
+        
+        loop = asyncio.get_event_loop()
+        run_pipeline = functools.partial(
+            pipeline.run,
+            documents=documents
+        )
+        
+        nodes = await loop.run_in_executor(None, run_pipeline)
         
         logger.info(f"Generated {len(nodes)} nodes from {len(documents)} documents")
         
+        # Check for cancellation after node processing
+        if _check_cancellation():
+            logger.info("Processing cancelled during node generation")
+            raise RuntimeError("Processing cancelled by user")
+        
         # Step 3: Create vector index from processed nodes
         logger.info("Creating vector index from nodes...")
+        _update_progress("Building vector index...", 50, current_phase="indexing")
+        
         vector_storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
         self.vector_index = VectorStoreIndex(
             nodes=nodes,
@@ -141,8 +200,14 @@ class HybridSearchSystem:
             show_progress=True
         )
         
-        # Step 4: Create graph index using the same nodes but with minimal knowledge graph extraction
+        # Check for cancellation after vector index creation
+        if _check_cancellation():
+            logger.info("Processing cancelled during vector index creation")
+            raise RuntimeError("Processing cancelled by user")
+        
+        # Step 4: Create graph index using the same nodes but with minimal knowledge graph extraction  
         logger.info("Creating graph index from same nodes...")
+        _update_progress("Extracting knowledge graph...", 70, current_phase="kg_extraction")
         
         # Always use knowledge graph extraction for graph functionality
         kg_extractors = []
@@ -188,6 +253,11 @@ class HybridSearchSystem:
         
         self.graph_index = await loop.run_in_executor(None, create_graph_index)
         
+        # Check for cancellation after graph index creation
+        if _check_cancellation():
+            logger.info("Processing cancelled during graph index creation")
+            raise RuntimeError("Processing cancelled by user")
+        
         # Step 4: Setup hybrid retriever
         self._setup_hybrid_retriever()
         
@@ -196,7 +266,7 @@ class HybridSearchSystem:
         
         logger.info("Document ingestion completed successfully!")
     
-    async def ingest_cmis(self, cmis_config: dict = None):
+    async def ingest_cmis(self, cmis_config: dict = None, processing_id: str = None, status_callback=None):
         """Ingest documents from CMIS source"""
         logger.info("Starting CMIS document ingestion...")
         
@@ -219,12 +289,39 @@ class HybridSearchSystem:
             folder_path=config["folder_path"]
         )
         
+        # Update status: Connected, now scanning
+        if status_callback:
+            status_callback(
+                processing_id=processing_id,
+                status="processing",
+                message="Connected to CMIS! Scanning for documents...",
+                progress=45
+            )
+        
         # Get documents from CMIS
         cmis_docs = cmis_source.list_files()
         
         if not cmis_docs:
             logger.warning("No supported documents found in CMIS repository")
+            if status_callback:
+                status_callback(
+                    processing_id=processing_id,
+                    status="completed",
+                    message="No supported documents found in CMIS repository",
+                    progress=100
+                )
             return
+        
+        # Update status with document count
+        if status_callback:
+            status_callback(
+                processing_id=processing_id,
+                status="processing",
+                message=f"Found {len(cmis_docs)} document(s) in CMIS repository",
+                progress=50,
+                total_files=len(cmis_docs),
+                files_completed=0
+            )
         
         # Create temporary directory for downloaded files
         import tempfile
@@ -235,8 +332,22 @@ class HybridSearchSystem:
         
         try:
             # Download all documents to temporary files
-            for doc in cmis_docs:
+            for i, doc in enumerate(cmis_docs):
                 try:
+                    # Update progress during download
+                    if status_callback:
+                        download_progress = 50 + int((i / len(cmis_docs)) * 20)  # 50-70% for downloads
+                        status_callback(
+                            processing_id=processing_id,
+                            status="processing",
+                            message=f"Downloading document {i+1}/{len(cmis_docs)}: {doc['name']}",
+                            progress=download_progress,
+                            current_file=doc['name'],
+                            current_phase="downloading",
+                            files_completed=i,
+                            total_files=len(cmis_docs)
+                        )
+                    
                     temp_file_path = cmis_source.download_document(doc, temp_dir)
                     temp_files.append(temp_file_path)
                     logger.info(f"Downloaded CMIS document: {doc['name']} -> {temp_file_path}")
@@ -245,11 +356,29 @@ class HybridSearchSystem:
                     continue
             
             if temp_files:
+                # Update status: Starting document processing
+                if status_callback:
+                    status_callback(
+                        processing_id=processing_id,
+                        status="processing",
+                        message=f"Processing {len(temp_files)} downloaded document(s)...",
+                        progress=70,
+                        total_files=len(temp_files),
+                        files_completed=0
+                    )
+                
                 # Process the downloaded files
-                await self.ingest_documents(temp_files)
+                await self.ingest_documents(temp_files, processing_id=processing_id, status_callback=status_callback)
                 logger.info(f"Successfully ingested {len(temp_files)} documents from CMIS")
             else:
                 logger.warning("No documents were successfully downloaded from CMIS")
+                if status_callback:
+                    status_callback(
+                        processing_id=processing_id,
+                        status="completed",
+                        message="No documents were successfully downloaded from CMIS",
+                        progress=100
+                    )
                 
         finally:
             # Clean up temporary files
@@ -269,7 +398,7 @@ class HybridSearchSystem:
             except Exception as e:
                 logger.warning(f"Failed to clean up temporary directory {temp_dir}: {str(e)}")
     
-    async def ingest_alfresco(self, alfresco_config: dict = None):
+    async def ingest_alfresco(self, alfresco_config: dict = None, processing_id: str = None, status_callback=None):
         """Ingest documents from Alfresco source"""
         logger.info("Starting Alfresco document ingestion...")
         
@@ -292,12 +421,39 @@ class HybridSearchSystem:
             path=config["path"]
         )
         
+        # Update status: Connected, now scanning
+        if status_callback:
+            status_callback(
+                processing_id=processing_id,
+                status="processing",
+                message="Connected to Alfresco! Scanning for documents...",
+                progress=45
+            )
+        
         # Get documents from Alfresco
         alfresco_docs = alfresco_source.list_files()
         
         if not alfresco_docs:
             logger.warning("No supported documents found in Alfresco repository")
+            if status_callback:
+                status_callback(
+                    processing_id=processing_id,
+                    status="completed",
+                    message="No supported documents found in Alfresco repository",
+                    progress=100
+                )
             return
+        
+        # Update status with document count
+        if status_callback:
+            status_callback(
+                processing_id=processing_id,
+                status="processing",
+                message=f"Found {len(alfresco_docs)} document(s) in Alfresco repository",
+                progress=50,
+                total_files=len(alfresco_docs),
+                files_completed=0
+            )
         
         # Create temporary directory for downloaded files
         import tempfile
@@ -308,8 +464,22 @@ class HybridSearchSystem:
         
         try:
             # Download all documents to temporary files
-            for doc in alfresco_docs:
+            for i, doc in enumerate(alfresco_docs):
                 try:
+                    # Update progress during download
+                    if status_callback:
+                        download_progress = 50 + int((i / len(alfresco_docs)) * 20)  # 50-70% for downloads
+                        status_callback(
+                            processing_id=processing_id,
+                            status="processing",
+                            message=f"Downloading document {i+1}/{len(alfresco_docs)}: {doc['name']}",
+                            progress=download_progress,
+                            current_file=doc['name'],
+                            current_phase="downloading",
+                            files_completed=i,
+                            total_files=len(alfresco_docs)
+                        )
+                    
                     temp_file_path = alfresco_source.download_document(doc, temp_dir)
                     temp_files.append(temp_file_path)
                     logger.info(f"Downloaded Alfresco document: {doc['name']} -> {temp_file_path}")
@@ -318,11 +488,29 @@ class HybridSearchSystem:
                     continue
             
             if temp_files:
+                # Update status: Starting document processing
+                if status_callback:
+                    status_callback(
+                        processing_id=processing_id,
+                        status="processing",
+                        message=f"Processing {len(temp_files)} downloaded document(s)...",
+                        progress=70,
+                        total_files=len(temp_files),
+                        files_completed=0
+                    )
+                
                 # Process the downloaded files
-                await self.ingest_documents(temp_files)
+                await self.ingest_documents(temp_files, processing_id=processing_id, status_callback=status_callback)
                 logger.info(f"Successfully ingested {len(temp_files)} documents from Alfresco")
             else:
                 logger.warning("No documents were successfully downloaded from Alfresco")
+                if status_callback:
+                    status_callback(
+                        processing_id=processing_id,
+                        status="completed",
+                        message="No documents were successfully downloaded from Alfresco",
+                        progress=100
+                    )
                 
         finally:
             # Clean up temporary files
@@ -342,12 +530,25 @@ class HybridSearchSystem:
             except Exception as e:
                 logger.warning(f"Failed to clean up temporary directory {temp_dir}: {str(e)}")
     
-    async def ingest_text(self, content: str, source_name: str = "text_input"):
+    async def ingest_text(self, content: str, source_name: str = "text_input", processing_id: str = None):
         """Ingest raw text content"""
         logger.info(f"Ingesting text content from: {source_name}")
         
+        # Helper function to check cancellation
+        def _check_cancellation():
+            if processing_id:
+                from backend import PROCESSING_STATUS
+                return (processing_id in PROCESSING_STATUS and 
+                        PROCESSING_STATUS[processing_id]["status"] == "cancelled")
+            return False
+        
         # Create document from text
         document = self.document_processor.process_text_content(content, source_name)
+        
+        # Check for cancellation after document processing
+        if _check_cancellation():
+            logger.info("Processing cancelled during text document creation")
+            raise RuntimeError("Processing cancelled by user")
         
         # Process similar to file ingestion but with single document
         pipeline = IngestionPipeline(
@@ -362,19 +563,48 @@ class HybridSearchSystem:
             ]
         )
         
-        nodes = pipeline.run(documents=[document])
+        # Use run_in_executor to avoid asyncio conflict
+        import asyncio
+        import functools
+        
+        loop = asyncio.get_event_loop()
+        run_pipeline = functools.partial(
+            pipeline.run,
+            documents=[document]
+        )
+        
+        nodes = await loop.run_in_executor(None, run_pipeline)
+        
+        # Check for cancellation after node processing
+        if _check_cancellation():
+            logger.info("Processing cancelled during text node generation")
+            raise RuntimeError("Processing cancelled by user")
         
         # Update or create indexes
         if self.vector_index is None:
             storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-            self.vector_index = VectorStoreIndex.from_documents(
+            
+            # Use run_in_executor to avoid asyncio conflict
+            import asyncio
+            import functools
+            
+            loop = asyncio.get_event_loop()
+            create_vector_index = functools.partial(
+                VectorStoreIndex.from_documents,
                 documents=[document],
                 storage_context=storage_context,
                 embed_model=self.embed_model
             )
+            
+            self.vector_index = await loop.run_in_executor(None, create_vector_index)
         else:
             # Add to existing index
             self.vector_index.insert_nodes(nodes)
+        
+        # Check for cancellation after vector index creation/update
+        if _check_cancellation():
+            logger.info("Processing cancelled during text vector index creation")
+            raise RuntimeError("Processing cancelled by user")
         
         # Update graph index - always use knowledge graph extraction for graph functionality
         kg_extractors = []
@@ -398,16 +628,30 @@ class HybridSearchSystem:
             graph_storage_context = StorageContext.from_defaults(
                 property_graph_store=self.graph_store
             )
-            self.graph_index = PropertyGraphIndex.from_documents(
+            
+            # Use asyncio.get_event_loop().run_in_executor to avoid event loop conflict
+            import asyncio
+            import functools
+            
+            loop = asyncio.get_event_loop()
+            create_graph_index = functools.partial(
+                PropertyGraphIndex.from_documents,
                 documents=[document],
                 llm=self.llm,
                 embed_model=self.embed_model,
-                kg_extractors=kg_extractors,  # Use empty list if no schema
+                kg_extractors=kg_extractors,
                 storage_context=graph_storage_context
             )
+            
+            self.graph_index = await loop.run_in_executor(None, create_graph_index)
         else:
             # Add to existing graph index
             self.graph_index.insert_nodes(nodes)
+        
+        # Check for cancellation after graph index creation/update
+        if _check_cancellation():
+            logger.info("Processing cancelled during text graph index creation")
+            raise RuntimeError("Processing cancelled by user")
         
         # Setup hybrid retriever
         self._setup_hybrid_retriever()
@@ -488,14 +732,39 @@ class HybridSearchSystem:
         
         logger.info("Index persistence completed")
     
+    def _clear_partial_state(self):
+        """Clear partial system state when inconsistencies are detected"""
+        logger.info("Clearing partial system state")
+        self.vector_index = None
+        self.graph_index = None
+        self.hybrid_retriever = None
+        logger.info("System state cleared - requires re-ingestion")
+    
     async def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Execute hybrid search across all modalities"""
         
+        # Check for complete system initialization
         if not self.hybrid_retriever:
             raise ValueError("System not initialized. Please ingest documents first.")
         
-        # Execute hybrid search
-        results = await self.hybrid_retriever.aretrieve(query)
+        # Check for partial initialization state
+        if not self.vector_index or not self.graph_index:
+            logger.warning("System in partial state - missing indexes, clearing and requiring re-ingestion")
+            self._clear_partial_state()
+            raise ValueError("System not initialized. Please ingest documents first.")
+        
+        try:
+            # Execute hybrid search
+            results = await self.hybrid_retriever.aretrieve(query)
+        except Exception as e:
+            # Check if this is a Neo4j vector index error indicating partial state
+            if "vector schema index" in str(e) or "There is no such vector schema index" in str(e):
+                logger.warning(f"Detected missing vector indexes in Neo4j: {str(e)}")
+                self._clear_partial_state()
+                raise ValueError("System not initialized. Please ingest documents first.")
+            else:
+                # Re-raise other errors
+                raise
         
         logger.info(f"Retrieved {len(results)} results from hybrid search")
         
@@ -716,17 +985,35 @@ class HybridSearchSystem:
     
     def get_query_engine(self, **kwargs):
         """Get query engine for Q&A"""
+        
+        # Check for complete system initialization
         if not self.hybrid_retriever:
+            raise ValueError("System not initialized. Please ingest documents first.")
+        
+        # Check for partial initialization state
+        if not self.vector_index or not self.graph_index:
+            logger.warning("System in partial state - missing indexes, clearing and requiring re-ingestion")
+            self._clear_partial_state()
             raise ValueError("System not initialized. Please ingest documents first.")
         
         # Create query engine from the retriever
         from llama_index.core.query_engine import RetrieverQueryEngine
         
-        return RetrieverQueryEngine.from_args(
-            retriever=self.hybrid_retriever,
-            llm=self.llm,
-            **kwargs
-        )
+        try:
+            return RetrieverQueryEngine.from_args(
+                retriever=self.hybrid_retriever,
+                llm=self.llm,
+                **kwargs
+            )
+        except Exception as e:
+            # Check if this is a Neo4j vector index error indicating partial state
+            if "vector schema index" in str(e) or "There is no such vector schema index" in str(e):
+                logger.warning(f"Detected missing vector indexes in Neo4j: {str(e)}")
+                self._clear_partial_state()
+                raise ValueError("System not initialized. Please ingest documents first.")
+            else:
+                # Re-raise other errors
+                raise
     
     def state(self) -> Dict[str, Any]:
         """Get current system state"""

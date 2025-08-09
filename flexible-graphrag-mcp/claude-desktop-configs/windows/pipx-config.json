@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "flexible-graphrag": {
+      "command": "flexible-graphrag-mcp",
+      "env": {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONLEGACYWINDOWSSTDIO": "1"
+      }
+    }
+  }
+}

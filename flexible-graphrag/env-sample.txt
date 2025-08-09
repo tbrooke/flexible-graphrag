@@ -4,6 +4,9 @@
 DATA_SOURCE=filesystem
 SOURCE_PATHS=["./sample_docs"]
 
+# Sample Text for Testing (optional - overrides default Dune text)
+# SAMPLE_TEXT="Luke Skywalker is a Jedi Knight from Tatooine. His father is Darth Vader, formerly known as Anakin Skywalker."
+
 # Windows Path Examples:
 # Relative paths (recommended):
 # SOURCE_PATHS=["./sample_docs", "./data/reports"]
@@ -44,10 +47,21 @@ USE_OPENAI=true
 # OpenAI Configuration
 OPENAI_API_KEY=your-openai-api-key-here
 OPENAI_MODEL=gpt-4o-mini
+# OPENAI_TIMEOUT=120.0  # LLM request timeout in seconds (default: 2 minutes)
 
 # Ollama Configuration (if using Ollama)
 OLLAMA_MODEL=llama3.1:8b
 OLLAMA_BASE_URL=http://localhost:11434
+# OLLAMA_TIMEOUT=300.0  # LLM request timeout in seconds (default: 5 minutes - higher for local processing)
+
+# Azure OpenAI Configuration (if using Azure)
+# AZURE_OPENAI_TIMEOUT=120.0  # LLM request timeout in seconds
+
+# Anthropic Configuration (if using Claude)
+# ANTHROPIC_TIMEOUT=120.0  # LLM request timeout in seconds
+
+# Gemini Configuration (if using Google)
+# GEMINI_TIMEOUT=120.0  # LLM request timeout in seconds
 
 # CMIS Configuration (if using CMIS)
 CMIS_URL=http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom
@@ -73,3 +87,66 @@ QDRANT_API_KEY=
 CHUNK_SIZE=1024
 CHUNK_OVERLAP=128
 MAX_TRIPLETS_PER_CHUNK=10
+
+# ====================================================================
+# TIMEOUT CONFIGURATIONS - Multiple Different Types
+# ====================================================================
+
+# 1. LLM REQUEST TIMEOUTS
+# Controls how long to wait for LLM API responses (OpenAI, Ollama, etc.)
+# Used during: Knowledge graph extraction, query answering, embeddings
+# OLLAMA_TIMEOUT=60.0  # For Ollama LLM requests (uncomment if using Ollama)
+
+# 2. DOCUMENT PROCESSING TIMEOUTS  
+# Controls Docling document conversion timeouts (NEW - configurable since this update)
+# Used during: PDF/DOCX/etc. conversion to text before LLM processing
+
+# DOCLING_TIMEOUT: Maximum time for processing a single document with Docling
+# - Small files (< 1MB): Usually 5-30 seconds
+# - Large PDFs (10MB+): May take 2-5 minutes 
+# - Complex documents: Up to 5-10 minutes
+# - Set higher for large documents or slower hardware
+DOCLING_TIMEOUT=300  # Default: 5 minutes (300 seconds)
+
+# DOCLING_CANCEL_CHECK_INTERVAL: How often to check for user cancellation during Docling
+# - Lower values (0.1-0.5s): More responsive cancellation, slightly higher CPU
+# - Higher values (1.0-2.0s): Less responsive but lower overhead  
+# - This is NEW - enables cancelling during single file processing
+DOCLING_CANCEL_CHECK_INTERVAL=0.5  # Default: 0.5 seconds
+
+# 3. KNOWLEDGE GRAPH EXTRACTION TIMEOUTS
+# Controls the lengthy process of extracting entities and relationships
+# Used during: Building knowledge graph from processed text chunks
+
+# KG_EXTRACTION_TIMEOUT: Maximum time for knowledge graph extraction per document
+# - Small documents (< 50 pages): Usually 5-15 minutes
+# - Large documents (100+ pages): May take 30-60+ minutes
+# - Complex technical documents: Up to 2+ hours
+# - Set higher for complex documents or slower hardware/LLMs
+KG_EXTRACTION_TIMEOUT=3600  # Default: 1 hour (3600 seconds)
+
+# KG_PROGRESS_REPORTING: Enable detailed progress during KG extraction
+# - Shows "Processing chunk X/Y" and entity/relationship counts
+# - Helps users understand why large documents take time
+KG_PROGRESS_REPORTING=true  # Default: enabled
+
+# KG_BATCH_SIZE: Number of chunks to process together during KG extraction
+# - Smaller batches (5-10): More frequent progress updates, better cancellation
+# - Larger batches (20-50): More efficient but less granular progress
+KG_BATCH_SIZE=10  # Default: 10 chunks per batch
+
+# KG_CANCEL_CHECK_INTERVAL: How often to check for cancellation during KG extraction
+# - Lower values (1.0-2.0s): More responsive but slightly higher overhead
+# - Higher values (5.0-10s): Less responsive but more efficient
+KG_CANCEL_CHECK_INTERVAL=2.0  # Default: 2 seconds
+
+# NOTE: These are DIFFERENT timeouts for DIFFERENT purposes:
+# - LLM timeouts: For single API calls to language models (1-5 minutes)
+# - Docling timeouts: For document conversion PDF → text (5-10 minutes) 
+# - KG extraction timeouts: For full knowledge graph building (30-60+ minutes)
+# - UI timeouts: Handled separately in frontend clients
+
+# SEQUENTIAL PROCESSING NOTE:
+# Files are processed sequentially (one after another) currently in the backend
+# and this is reflected in the UI feedback. Each file completes fully before
+# the next file begins processing.

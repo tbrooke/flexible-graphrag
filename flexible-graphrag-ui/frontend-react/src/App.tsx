@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import LinearProgress from '@mui/material/LinearProgress';
 import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import FormControl from '@mui/material/FormControl';
@@ -49,6 +50,29 @@ interface ApiResponse {
   results?: any[];
 }
 
+// New async processing response
+interface AsyncProcessingResponse {
+  processing_id: string;
+  status: 'started' | 'processing' | 'completed' | 'failed';
+  message: string;
+  progress?: number;
+  estimated_time?: string;
+  started_at?: string;
+  updated_at?: string;
+  error?: string;
+}
+
+// Processing status check response
+interface ProcessingStatusResponse {
+  processing_id: string;
+  status: 'started' | 'processing' | 'completed' | 'failed';
+  message: string;
+  progress: number;
+  started_at: string;
+  updated_at: string;
+  error?: string;
+}
+
 const App: React.FC = () => {
   // Default values
   const defaultFolderPath = import.meta.env.VITE_PROCESS_FOLDER_PATH || '/Shared/GraphRAG';
@@ -78,12 +102,80 @@ const App: React.FC = () => {
   const [isQuerying, setIsQuerying] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [processingStatus, setProcessingStatus] = useState<string>('');
+  const [processingProgress, setProcessingProgress] = useState<number>(0);
+  const [currentProcessingId, setCurrentProcessingId] = useState<string | null>(null);
+  const [statusData, setStatusData] = useState<any>(null);
 
   // Clear messages when data source changes
   useEffect(() => {
     setError('');
     setSuccessMessage('');
+    setProcessingStatus('');
+    setProcessingProgress(0);
   }, [dataSource]);
+
+  // Polling function for processing status
+  const pollProcessingStatus = useCallback(async (processingId: string) => {
+    try {
+      const response = await axios.get<ProcessingStatusResponse>(`/api/processing-status/${processingId}`);
+      const status = response.data;
+      
+      setProcessingStatus(status.message);
+      setProcessingProgress(status.progress);
+      setStatusData(status);  // Store full status for enhanced progress display
+      
+      if (status.status === 'completed') {
+        setIsProcessing(false);
+        setProcessingStatus('');
+        setProcessingProgress(0);
+        setCurrentProcessingId(null);
+        setSuccessMessage('Documents ingested successfully!');
+      } else if (status.status === 'failed') {
+        setIsProcessing(false);
+        setProcessingStatus('');
+        setProcessingProgress(0);
+        setCurrentProcessingId(null);
+        setError(status.error || 'Processing failed');
+      } else if (status.status === 'cancelled') {
+        setIsProcessing(false);
+        setProcessingStatus('');
+        setProcessingProgress(0);
+        setCurrentProcessingId(null);
+        setSuccessMessage('Processing cancelled successfully');
+      } else if (status.status === 'started' || status.status === 'processing') {
+        // Continue polling
+        setTimeout(() => pollProcessingStatus(processingId), 2000);
+      }
+    } catch (err) {
+      console.error('Error checking processing status:', err);
+      setError('Error checking processing status');
+      setIsProcessing(false);
+      setCurrentProcessingId(null);
+    }
+  }, []);
+
+  const cancelProcessing = async (): Promise<void> => {
+    if (!currentProcessingId) return;
+    
+    try {
+      const response = await axios.post(`/api/cancel-processing/${currentProcessingId}`, {});
+      
+      if (response.data.success) {
+        // Success will be handled by the polling status check
+      } else {
+        setError('Failed to cancel processing');
+        setSuccessMessage('');
+      }
+    } catch (err) {
+      console.error('Error cancelling processing:', err);
+      const errorMessage = axios.isAxiosError(err)
+        ? err.response?.data?.detail || err.response?.data?.error || 'Error cancelling processing'
+        : 'An unknown error occurred';
+      setError(errorMessage);
+      setSuccessMessage('');
+    }
+  };
 
   const isFormValid = (): boolean => {
     switch (dataSource) {
@@ -136,13 +228,22 @@ const App: React.FC = () => {
         };
       }
 
-      const response = await axios.post<ApiResponse>('/api/ingest', request);
+      const response = await axios.post<AsyncProcessingResponse>('/api/ingest', request);
       
-      // Check for both response formats: ingest uses 'status', search uses 'success'
-      if (response.data.status === 'success' || response.data.success) {
-        setSuccessMessage(response.data.message || 'Documents ingested successfully!');
-      } else {
-        setError(response.data.error || response.data.message || 'Error ingesting documents');
+      // Handle async processing response
+      if (response.data.status === 'started') {
+        setProcessingStatus(response.data.message);
+        setProcessingProgress(0);
+        setCurrentProcessingId(response.data.processing_id);
+        setSuccessMessage(`Processing started: ${response.data.estimated_time || 'Please wait...'}`);
+        // Start polling for status
+        setTimeout(() => pollProcessingStatus(response.data.processing_id), 2000);
+      } else if (response.data.status === 'completed') {
+        setIsProcessing(false);
+        setSuccessMessage('Documents ingested successfully!');
+      } else if (response.data.status === 'failed') {
+        setIsProcessing(false);
+        setError(response.data.error || 'Processing failed');
       }
     } catch (err) {
       console.error('Error processing documents:', err);
@@ -150,8 +251,8 @@ const App: React.FC = () => {
         ? err.response?.data?.detail || err.response?.data?.error || 'Error processing documents'
         : 'An unknown error occurred';
       setError(errorMessage);
-    } finally {
       setIsProcessing(false);
+      setCurrentProcessingId(null);
     }
   };
 
@@ -337,13 +438,64 @@ const App: React.FC = () => {
         
         {renderDataSourceFields()}
         
+        {/* Processing Status */}
+        {isProcessing && (
+          <Box sx={{ mt: 2, mb: 2 }}>
+            <Box display="flex" alignItems="center" mb={1}>
+              <CircularProgress size={20} sx={{ mr: 1 }} />
+              <Typography variant="body2">
+                {processingStatus || 'Processing documents...'}
+              </Typography>
+            </Box>
+            <LinearProgress 
+              variant="determinate" 
+              value={processingProgress} 
+              sx={{ mb: 1 }} 
+            />
+            <Typography variant="caption" color="text.secondary">
+              {processingProgress}% complete
+              {statusData?.file_progress && (
+                <Box sx={{ mt: 0.5 }}>
+                  {statusData.file_progress}
+                </Box>
+              )}
+              {statusData?.current_file && (
+                <Box sx={{ mt: 0.5 }}>
+                  Processing: {statusData.current_file.split(/[/\\]/).pop()}
+                </Box>
+              )}
+              {statusData?.current_phase && (
+                <Box sx={{ mt: 0.5 }}>
+                  Phase: {statusData.current_phase}
+                </Box>
+              )}
+              {statusData?.estimated_time_remaining && (
+                <Box sx={{ mt: 0.5 }}>
+                  Time remaining: {statusData.estimated_time_remaining}
+                </Box>
+              )}
+            </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={cancelProcessing}
+                disabled={!currentProcessingId}
+                size="small"
+              >
+                Cancel Processing
+              </Button>
+            </Box>
+          </Box>
+        )}
+        
         <Button
           variant="contained"
           onClick={processDocuments}
           disabled={!isFormValid() || isProcessing}
           sx={{ minWidth: 200 }}
         >
-          {isProcessing ? <CircularProgress size={24} /> : 'Ingest Documents'}
+          {isProcessing ? 'Processing...' : 'Ingest Documents'}
         </Button>
         
         {successMessage && (

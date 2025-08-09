@@ -89,13 +89,14 @@ MATCH (n) DETACH DELETE n
 // 2. Verify deletion
 MATCH (n) RETURN n
 
-// 3. Drop LlamaIndex vector indexes
-DROP INDEX vector IF EXISTS
+// 3. Drop LlamaIndex indexes
+DROP INDEX vector IF EXISTS;
+DROP INDEX entity IF EXISTS;
 
 // 4. Drop LlamaIndex constraints  
 // Entity and Node constraints for faster retrieval
-DROP CONSTRAINT constraint_907a464e IF EXISTS  // __Entity__ id constraint
-DROP CONSTRAINT constraint_ec67c859 IF EXISTS  // __Node__ id constraint
+DROP CONSTRAINT constraint_907a464e IF EXISTS;  // __Entity__ id constraint
+DROP CONSTRAINT constraint_ec67c859 IF EXISTS;  // __Node__ id constraint
 
 // 5. Show remaining indexes and constraints
 SHOW INDEXES
@@ -117,6 +118,7 @@ SHOW CONSTRAINTS
 
 **Indexes:**
 - `vector` - Vector index on `Chunk.embedding` property (VECTOR type)
+- `entity` - Entity index for faster entity lookups
 
 **Constraints:**
 - `constraint_907a464e` - RANGE constraint on `__Entity__.id`

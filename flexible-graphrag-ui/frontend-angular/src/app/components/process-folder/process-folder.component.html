@@ -48,6 +48,7 @@
               <input 
                 matInput 
                 formControlName="cmisUsername"
+                placeholder="Enter CMIS username"
                 [disabled]="isProcessing"
               >
             </mat-form-field>
@@ -59,6 +60,7 @@
                 matInput 
                 type="password"
                 formControlName="cmisPassword"
+                placeholder="Enter CMIS password"
                 [disabled]="isProcessing"
               >
             </mat-form-field>
@@ -96,6 +98,7 @@
               <input 
                 matInput 
                 formControlName="alfrescoUsername"
+                placeholder="Enter Alfresco username"
                 [disabled]="isProcessing"
               >
             </mat-form-field>
@@ -107,6 +110,7 @@
                 matInput 
                 type="password"
                 formControlName="alfrescoPassword"
+                placeholder="Enter Alfresco password"
                 [disabled]="isProcessing"
               >
             </mat-form-field>
@@ -125,6 +129,56 @@
         </mat-form-field>
       </div>
 
+      <!-- Processing Status -->
+      <div *ngIf="isProcessing" class="processing-status mt-3 mb-3">
+        <div class="d-flex align-items-center mb-2">
+          <mat-spinner diameter="20" class="me-2"></mat-spinner>
+          <span class="status-text">{{ processingStatus || 'Processing documents...' }}</span>
+        </div>
+        <mat-progress-bar 
+          mode="determinate" 
+          [value]="processingProgress"
+          class="progress-bar"
+        ></mat-progress-bar>
+        <small class="progress-text">
+          {{ processingProgress }}% complete
+          <div *ngIf="statusData?.file_progress" class="mt-1">
+            {{ statusData.file_progress }}
+          </div>
+          <div *ngIf="statusData?.current_file" class="mt-1">
+            Processing: {{ getFileName(statusData.current_file) }}
+          </div>
+          <div *ngIf="statusData?.current_phase" class="mt-1">
+            Phase: {{ statusData.current_phase }}
+          </div>
+          <div *ngIf="statusData?.estimated_time_remaining" class="mt-1">
+            Time remaining: {{ statusData.estimated_time_remaining }}
+          </div>
+        </small>
+        <button 
+          type="button"
+          mat-stroked-button 
+          color="warn" 
+          (click)="cancelProcessing()"
+          class="cancel-btn mt-2"
+          [disabled]="!currentProcessingId"
+        >
+          Cancel Processing
+        </button>
+      </div>
+
+      <!-- Success Message -->
+      <div *ngIf="successMessage" class="alert alert-success alert-dismissible mt-3">
+        {{ successMessage }}
+        <button type="button" class="btn-close" aria-label="Close" (click)="successMessage = ''"></button>
+      </div>
+
+      <!-- Error Message -->
+      <div *ngIf="errorMessage" class="alert alert-danger alert-dismissible mt-3">
+        {{ errorMessage }}
+        <button type="button" class="btn-close" aria-label="Close" (click)="errorMessage = ''"></button>
+      </div>
+
       <div class="mt-3">
         <button 
           mat-raised-button 
@@ -133,7 +187,7 @@
           [disabled]="form.invalid || isProcessing"
         >
           <span *ngIf="!isProcessing">Ingest Documents</span>
-          <mat-spinner *ngIf="isProcessing" diameter="24"></mat-spinner>
+          <span *ngIf="isProcessing">Processing...</span>
         </button>
       </div>
     </form>

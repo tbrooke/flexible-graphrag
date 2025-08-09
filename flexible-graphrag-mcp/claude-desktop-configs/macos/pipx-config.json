@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "flexible-graphrag": {
+      "command": "flexible-graphrag-mcp"
+    }
+  }
+}

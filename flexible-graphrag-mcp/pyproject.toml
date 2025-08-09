@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flexible-graphrag-mcp"
+version = "1.0.0"
+description = "MCP Server for Flexible GraphRAG"
+dependencies = [
+    "fastmcp",
+    "nest-asyncio", 
+    "httpx",
+    "python-dotenv"
+]
+
+[project.scripts]
+flexible-graphrag-mcp = "main:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black", 
+    "flake8"
+]
+
+[tool.setuptools]
+py-modules = ["main"]

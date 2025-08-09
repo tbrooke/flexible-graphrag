@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class DocumentProcessor:
     """Handles document conversion using Docling before LlamaIndex processing"""
     
-    def __init__(self):
+    def __init__(self, config=None):
         # Configure Docling for optimal PDF processing
         pdf_options = PdfPipelineOptions(
             do_table_structure=True,
@@ -41,13 +41,68 @@ class DocumentProcessor:
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)
             }
         )
+        
+        # Store configuration for timeouts
+        self.config = config
+        
         logger.info("DocumentProcessor initialized with Docling converter")
     
-    async def process_documents(self, file_paths: List[Union[str, Path]]) -> List[Document]:
+    async def _run_with_cancellation_checks(self, loop, func, check_cancellation, timeout=None):
+        """Run a function in executor with periodic cancellation checks"""
+        import asyncio
+        import concurrent.futures
+        
+        # Use configured timeout and check interval, or defaults
+        if timeout is None:
+            timeout = self.config.docling_timeout if self.config else 300
+        check_interval = self.config.docling_cancel_check_interval if self.config else 0.5
+        
+        # Submit the task to executor
+        future = loop.run_in_executor(None, func)
+        
+        elapsed = 0
+        
+        while not future.done():
+            try:
+                # Wait for a short period or task completion
+                await asyncio.wait_for(asyncio.shield(future), timeout=check_interval)
+                break  # Task completed
+            except asyncio.TimeoutError:
+                # Check for cancellation
+                if check_cancellation():
+                    logger.info("Cancelling Docling conversion due to user request")
+                    future.cancel()
+                    raise RuntimeError("Processing cancelled by user")
+                
+                # Check for overall timeout
+                elapsed += check_interval
+                if elapsed >= timeout:
+                    logger.warning(f"Docling conversion timeout after {timeout} seconds")
+                    future.cancel()
+                    raise concurrent.futures.TimeoutError()
+        
+        return await future
+    
+    async def process_documents(self, file_paths: List[Union[str, Path]], processing_id: str = None) -> List[Document]:
         """Convert documents to markdown using Docling, then create LlamaIndex Documents"""
         documents = []
         
+        # Helper function to check cancellation
+        def _check_cancellation():
+            if processing_id:
+                try:
+                    from backend import PROCESSING_STATUS
+                    return (processing_id in PROCESSING_STATUS and 
+                            PROCESSING_STATUS[processing_id]["status"] == "cancelled")
+                except ImportError:
+                    return False
+            return False
+        
         for file_path in file_paths:
+            # Check for cancellation before processing each file
+            if _check_cancellation():
+                logger.info("Document processing cancelled by user")
+                raise RuntimeError("Processing cancelled by user")
             try:
                 path_obj = Path(file_path)
                 
@@ -64,9 +119,33 @@ class DocumentProcessor:
                     '.csv', '.xml', '.json'
                 ]
                 if path_obj.suffix.lower() in docling_extensions:
+                    # Check for cancellation before heavy processing
+                    if _check_cancellation():
+                        logger.info("Document processing cancelled before Docling conversion")
+                        raise RuntimeError("Processing cancelled by user")
+                    
                     logger.info(f"Converting document with Docling: {file_path}")
-                    # Convert using Docling
-                    result = self.converter.convert(str(file_path))
+                    
+                    # Convert using Docling with cancellation support
+                    import asyncio
+                    import functools
+                    import concurrent.futures
+                    
+                    loop = asyncio.get_event_loop()
+                    convert_func = functools.partial(self.converter.convert, str(file_path))
+                    
+                    # Run with periodic cancellation checks using configured timeout
+                    try:
+                        result = await self._run_with_cancellation_checks(
+                            loop, convert_func, _check_cancellation
+                        )
+                    except concurrent.futures.TimeoutError:
+                        raise RuntimeError("Processing cancelled by user")
+                    
+                    # Final check for cancellation after Docling conversion
+                    if _check_cancellation():
+                        logger.info("Document processing cancelled after Docling conversion")
+                        raise RuntimeError("Processing cancelled by user")
                     
                     # Extract both markdown and plain text
                     markdown_content = result.document.export_to_markdown()

@@ -83,6 +83,10 @@ class QueryRequest(BaseModel):
     top_k: int = 10
     query_type: Optional[str] = "hybrid"  # hybrid, qa
 
+class TextIngestRequest(BaseModel):
+    content: str
+    source_name: Optional[str] = "sample-test"
+
 class Document(BaseModel):
     id: str
     name: str
@@ -106,14 +110,11 @@ async def health_check():
 @app.post("/api/ingest")
 async def ingest(request: IngestRequest):
     try:
-        logger.info(f"Processing ingest request: {request}")
+        logger.info(f"Starting async document ingestion: {request}")
         logger.info(f"Data source: {request.data_source}, Paths: {request.paths}")
         
         data_source = request.data_source or str(settings.data_source)
         paths = request.paths
-        
-        # Log start of processing
-        logger.info(f"Starting document ingestion for {len(paths) if paths else 0} paths")
         
         # Prepare additional kwargs for data source configs
         kwargs = {}
@@ -124,17 +125,11 @@ async def ingest(request: IngestRequest):
         
         result = await backend_instance.ingest_documents(data_source=data_source, paths=paths, **kwargs)
         
-        if result["success"]:
-            logger.info("Ingestion completed successfully")
-            return {"status": "success", "message": result["message"]}
-        else:
-            logger.error(f"Ingestion failed: {result['error']}")
-            raise HTTPException(400, result["error"])
+        logger.info(f"Document ingestion started with ID: {result['processing_id']}")
+        return result
             
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error during ingestion: {str(e)}", exc_info=True)
+        logger.error(f"Error starting document ingestion: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search")
@@ -199,25 +194,99 @@ async def get_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/test-sample")
-async def test_sample(sample_text: str = None):
-    """Test endpoint with sample text for quick testing."""
+async def test_sample_default():
+    """Test endpoint with configurable sample text using async processing."""
     try:
-        sample = sample_text or """The son of Duke Leto Atreides and the Lady Jessica, Paul is the heir of House Atreides,
-an aristocratic family that rules the planet Caladan, the rainy planet, since 10191."""
+        content = settings.sample_text
+        source_name = "sample-test"
         
-        logger.info("Processing sample text for testing")
-        result = await backend_instance.ingest_text(content=sample, source_name="sample-test")
+        logger.info("Starting async sample text processing")
+        result = await backend_instance.ingest_text(content=content, source_name=source_name)
+        
+        # Return the async processing response (same format as ingest-text)
+        logger.info(f"Sample text processing started with ID: {result['processing_id']}")
+        return result
+    except Exception as e:
+        logger.error(f"Error starting sample text processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ingest-text")
+async def ingest_custom_text(request: TextIngestRequest):
+    """Start async text ingestion and return processing ID."""
+    try:
+        logger.info(f"Starting async text ingestion: source='{request.source_name}'")
+        result = await backend_instance.ingest_text(content=request.content, source_name=request.source_name)
+        
+        logger.info(f"Text ingestion started with ID: {result['processing_id']}")
+        return result
+    except Exception as e:
+        logger.error(f"Error starting text ingestion: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/processing-status/{processing_id}")
+async def get_processing_status(processing_id: str):
+    """Get processing status by ID."""
+    try:
+        logger.info(f"Checking processing status for ID: {processing_id}")
+        result = backend_instance.get_processing_status(processing_id)
         
         if result["success"]:
-            logger.info("Sample text processing completed")
-            return {"status": "success", "message": result["message"]}
+            logger.info(f"Status retrieved for {processing_id}: {result['processing']['status']}")
+            return result["processing"]
         else:
-            raise HTTPException(500, result["error"])
+            raise HTTPException(404, result["error"])
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing sample text: {str(e)}")
+        logger.error(f"Error getting processing status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cancel-processing/{processing_id}")
+async def cancel_processing(processing_id: str):
+    """Cancel processing by ID."""
+    try:
+        logger.info(f"Cancelling processing for ID: {processing_id}")
+        result = backend_instance.cancel_processing(processing_id)
+        
+        if result["success"]:
+            logger.info(f"Processing {processing_id} cancelled successfully")
+            return {"success": True, "message": result["message"]}
+        else:
+            raise HTTPException(400, result["error"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/processing-events/{processing_id}")
+async def processing_events(processing_id: str):
+    """Server-Sent Events for real-time processing updates (UI clients only)."""
+    from fastapi.responses import StreamingResponse
+    import json
+    import time
+    
+    def event_stream():
+        while True:
+            result = backend_instance.get_processing_status(processing_id)
+            if result["success"]:
+                status_data = result["processing"]
+                yield f"data: {json.dumps(status_data)}\n\n"
+                
+                # Stop streaming if completed or failed
+                if status_data["status"] in ["completed", "failed"]:
+                    break
+            else:
+                yield f"data: {json.dumps({'error': result['error']})}\n\n"
+                break
+                
+            time.sleep(2)  # Poll every 2 seconds
+    
+    return StreamingResponse(
+        event_stream(), 
+        media_type="text/plain",
+        headers={"Cache-Control": "no-cache"}
+    )
 
 @app.get("/api/info")
 async def get_api_info():

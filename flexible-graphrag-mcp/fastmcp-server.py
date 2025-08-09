@@ -120,26 +120,28 @@ def health_check() -> Dict[str, Any]:
         logger.error(f"Error in health_check: {e}")
         return {"success": False, "error": str(e)}
 
-async def main():
-    """Run the MCP server"""
-    logger.info("🚀 Starting Standalone Flexible GraphRAG MCP Server")
-    logger.info("🛠️  Available tools:")
-    logger.info("   • get_system_status - Get system status and configuration")
-    logger.info("   • ingest_documents - Ingest documents from various sources")
-    logger.info("   • search_documents - Hybrid search for document retrieval") 
-    logger.info("   • query_documents - AI-generated answers from documents")
-    logger.info("   • ingest_text - Ingest raw text content")
-    logger.info("   • get_config - Get current configuration")
-    logger.info("   • health_check - System health check")
-    logger.info("")
-    logger.info("📡 This MCP server uses the shared backend directly (no HTTP overhead)")
-    
-    # Run the MCP server
-    await mcp.run()
-
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        # Apply nest_asyncio to handle nested event loops
+        import nest_asyncio
+        nest_asyncio.apply()
+        
+        # Log startup info
+        logger.info("🚀 Starting Standalone Flexible GraphRAG MCP Server")
+        logger.info("🛠️  Available tools:")
+        logger.info("   • get_system_status - Get system status and configuration")
+        logger.info("   • ingest_documents - Ingest documents from various sources")
+        logger.info("   • search_documents - Hybrid search for document retrieval") 
+        logger.info("   • query_documents - AI-generated answers from documents")
+        logger.info("   • ingest_text - Ingest raw text content")
+        logger.info("   • get_config - Get current configuration")
+        logger.info("   • health_check - System health check")
+        logger.info("")
+        logger.info("📡 This MCP server uses the shared backend directly (no HTTP overhead)")
+        
+        # Run the server directly
+        asyncio.run(mcp.run())
+        
     except KeyboardInterrupt:
         logger.info("MCP server stopped by user")
     except Exception as e:

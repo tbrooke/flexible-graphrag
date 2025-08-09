@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     data_source: DataSourceType = DataSourceType.FILESYSTEM
     source_paths: Optional[List[str]] = Field(None, description="Files or folders; CMIS/Alfresco config in env")
     
+    # Sample text configuration
+    sample_text: str = Field(
+        default="""The son of Duke Leto Atreides and the Lady Jessica, Paul is the heir of House Atreides,
+an aristocratic family that rules the planet Caladan, the rainy planet, since 10191.""",
+        description="Default sample text for testing"
+    )
+    
     @field_validator('source_paths', mode='before')
     @classmethod
     def parse_source_paths(cls, v):
@@ -82,6 +89,16 @@ class Settings(BaseSettings):
     chunk_overlap: int = 128
     max_triplets_per_chunk: int = 10
     
+    # Document processing timeouts (in seconds) - DIFFERENT from LLM timeouts
+    docling_timeout: int = Field(300, description="Timeout for single document Docling conversion in seconds (default: 5 minutes) - separate from LLM request timeouts")
+    docling_cancel_check_interval: float = Field(0.5, description="How often to check for cancellation during Docling processing in seconds - enables mid-file cancellation")
+    
+    # Knowledge graph extraction timeouts and progress
+    kg_extraction_timeout: int = Field(3600, description="Timeout for knowledge graph extraction per document in seconds (default: 1 hour for large documents)")
+    kg_progress_reporting: bool = Field(True, description="Enable detailed progress reporting during knowledge graph extraction")
+    kg_batch_size: int = Field(10, description="Number of chunks to process in each batch during KG extraction")
+    kg_cancel_check_interval: float = Field(2.0, description="How often to check for cancellation during KG extraction in seconds")
+    
     # Environment-based defaults
     def __init__(self, **data):
         super().__init__(**data)
@@ -94,7 +111,8 @@ class Settings(BaseSettings):
                     "api_key": os.getenv("OPENAI_API_KEY"),
                     "embedding_model": "text-embedding-3-small",
                     "temperature": 0.1,
-                    "max_tokens": 4000
+                    "max_tokens": 4000,
+                    "timeout": float(os.getenv("OPENAI_TIMEOUT", "120.0"))
                 }
             elif self.llm_provider == LLMProvider.OLLAMA:
                 self.llm_config = {
@@ -102,7 +120,31 @@ class Settings(BaseSettings):
                     "base_url": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
                     "embedding_model": "mxbai-embed-large",
                     "temperature": 0.1,
-                    "timeout": 60.0
+                    "timeout": float(os.getenv("OLLAMA_TIMEOUT", "300.0"))  # Higher default for local processing
+                }
+            elif self.llm_provider == LLMProvider.AZURE_OPENAI:
+                self.llm_config = {
+                    "engine": os.getenv("AZURE_OPENAI_ENGINE"),
+                    "model": os.getenv("AZURE_OPENAI_MODEL", "gpt-4"),
+                    "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+                    "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+                    "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01"),
+                    "temperature": 0.1,
+                    "timeout": float(os.getenv("AZURE_OPENAI_TIMEOUT", "120.0"))
+                }
+            elif self.llm_provider == LLMProvider.ANTHROPIC:
+                self.llm_config = {
+                    "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+                    "api_key": os.getenv("ANTHROPIC_API_KEY"),
+                    "temperature": 0.1,
+                    "timeout": float(os.getenv("ANTHROPIC_TIMEOUT", "120.0"))
+                }
+            elif self.llm_provider == LLMProvider.GEMINI:
+                self.llm_config = {
+                    "model": os.getenv("GEMINI_MODEL", "models/gemini-1.5-flash"),
+                    "api_key": os.getenv("GEMINI_API_KEY"),
+                    "temperature": 0.1,
+                    "timeout": float(os.getenv("GEMINI_TIMEOUT", "120.0"))
                 }
         
         # Set default database configs if not provided
@@ -112,6 +154,7 @@ class Settings(BaseSettings):
                     "username": os.getenv("NEO4J_USER", "neo4j"),
                     "password": os.getenv("NEO4J_PASSWORD", "password"),
                     "url": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    "database": os.getenv("NEO4J_DATABASE", "neo4j"),
                     "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024
                 }
         
@@ -120,7 +163,8 @@ class Settings(BaseSettings):
                 self.graph_db_config = {
                     "username": os.getenv("NEO4J_USER", "neo4j"),
                     "password": os.getenv("NEO4J_PASSWORD", "password"),
-                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7687")
+                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    "database": os.getenv("NEO4J_DATABASE", "neo4j")
                 }
 
     model_config = {

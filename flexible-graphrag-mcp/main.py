@@ -11,6 +11,9 @@ import httpx
 from typing import List, Dict, Any, Optional
 from fastmcp import FastMCP
 
+# Windows encoding is handled by environment variables in Claude Desktop config:
+# PYTHONIOENCODING=utf-8 and PYTHONLEGACYWINDOWSSTDIO=1
+
 # Add parent directory to path to import from flexible-graphrag
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'flexible-graphrag'))
 
@@ -45,23 +48,39 @@ async def get_system_status() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 @mcp.tool()
-async def ingest_documents(data_source: str = "filesystem", paths: Optional[List[str]] = None) -> Dict[str, Any]:
+async def ingest_documents(data_source: str = "filesystem", paths: str = None) -> Dict[str, Any]:
     """
     Ingest documents from a data source
     
     Args:
-        data_source: Type of data source (filesystem, cmis, alfresco)
-        paths: List of file/folder paths (for filesystem source)
+        data_source: Type of data source (filesystem, cmis, alfresco)  
+        paths: Single file path or JSON array of paths (for filesystem source)
     """
     try:
         request_data = {"data_source": data_source}
         if paths:
-            request_data["paths"] = paths
+            # Handle both single path string and JSON array string
+            import json
+            try:
+                # Try to parse as JSON array first
+                parsed_paths = json.loads(paths)
+                if isinstance(parsed_paths, list):
+                    request_data["paths"] = parsed_paths
+                else:
+                    request_data["paths"] = [str(parsed_paths)]
+            except json.JSONDecodeError:
+                # If JSON parsing fails, treat as single path
+                request_data["paths"] = [paths]
             
         result = await make_api_call("POST", "/api/ingest", request_data)
-        return {"success": True, "data": result}
+        return result  # Return the async processing response directly
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {
+            "processing_id": "error", 
+            "status": "failed", 
+            "message": f"Failed to start document processing: {str(e) or 'Unknown error'}", 
+            "progress": 0
+        }
 
 @mcp.tool()
 async def search_documents(query: str, top_k: int = 10) -> Dict[str, Any]:
@@ -105,6 +124,36 @@ async def test_with_sample() -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 @mcp.tool()
+async def ingest_text(content: str, source_name: str = "mcp-input") -> Dict[str, Any]:
+    """
+    Ingest raw text content into the knowledge graph
+    
+    Args:
+        content: Text content to ingest
+        source_name: Name/identifier for this text source
+    """
+    try:
+        request_data = {"content": content, "source_name": source_name}
+        result = await make_api_call("POST", "/api/ingest-text", request_data)
+        return {"success": True, "data": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@mcp.tool()
+async def check_processing_status(processing_id: str) -> Dict[str, Any]:
+    """
+    Check the status of an async processing operation
+    
+    Args:
+        processing_id: The processing ID returned from ingest_text
+    """
+    try:
+        result = await make_api_call("GET", f"/api/processing-status/{processing_id}")
+        return {"success": True, "processing": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@mcp.tool()
 async def get_python_info() -> Dict[str, Any]:
     """Get information about the Python environment of the backend"""
     try:
@@ -122,21 +171,76 @@ async def health_check() -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-async def main():
+def main():
     """Run the MCP server"""
-    print(f"🚀 Starting Flexible GraphRAG MCP Server")
-    print(f"📡 Backend URL: {BACKEND_URL}")
-    print(f"🛠️  Available tools:")
-    print(f"   • get_system_status")
-    print(f"   • ingest_documents")
-    print(f"   • search_documents") 
-    print(f"   • query_documents")
-    print(f"   • test_with_sample")
-    print(f"   • get_python_info")
-    print(f"   • health_check")
+    import sys
+    
+    # Check for HTTP mode via command line arguments
+    http_mode = "--http" in sys.argv or "--serve" in sys.argv
+    
+    # Check for --transport http pattern
+    if "--transport" in sys.argv:
+        try:
+            transport_idx = sys.argv.index("--transport") + 1
+            if transport_idx < len(sys.argv) and sys.argv[transport_idx].lower() == "http":
+                http_mode = True
+        except (IndexError, ValueError):
+            pass
+    port = 3001  # Default MCP Inspector port
+    host = "localhost"  # Default host
+    
+    # Parse port argument
+    if "--port" in sys.argv:
+        try:
+            port_idx = sys.argv.index("--port") + 1
+            port = int(sys.argv[port_idx])
+        except (IndexError, ValueError):
+            port = 3001
+    
+    # Parse host argument
+    if "--host" in sys.argv:
+        try:
+            host_idx = sys.argv.index("--host") + 1
+            host = sys.argv[host_idx]
+        except IndexError:
+            host = "localhost"
+    
+    # Log to stderr instead of stdout to avoid interfering with MCP protocol
+    sys.stderr.write("🚀 Starting Flexible GraphRAG MCP Server\n")
+    sys.stderr.write(f"📡 Backend URL: {BACKEND_URL}\n")
+    
+    if http_mode:
+        sys.stderr.write(f"🌐 Running in HTTP mode on {host}:{port}\n")
+        sys.stderr.write("🔍 Suitable for MCP Inspector debugging\n")
+    else:
+        sys.stderr.write("📱 Running in stdio mode for Claude Desktop\n")
+    
+    sys.stderr.write("🛠️  Available tools:\n")
+    sys.stderr.write("   • get_system_status\n")
+    sys.stderr.write("   • ingest_documents\n")
+    sys.stderr.write("   • search_documents\n") 
+    sys.stderr.write("   • query_documents\n")
+    sys.stderr.write("   • test_with_sample\n")
+    sys.stderr.write("   • ingest_text\n")
+    sys.stderr.write("   • check_processing_status\n")
+    sys.stderr.write("   • get_python_info\n")
+    sys.stderr.write("   • health_check\n")
+    sys.stderr.flush()
     
     # Run the MCP server
-    await mcp.run()
+    try:
+        # Apply nest_asyncio to handle nested event loops
+        import nest_asyncio
+        nest_asyncio.apply()
+    except ImportError:
+        pass
+    
+    if http_mode:
+        # Run HTTP server for MCP Inspector
+        asyncio.run(mcp.run_http_async(host=host, port=port))
+    else:
+        # Run stdio server for Claude Desktop
+        asyncio.run(mcp.run_async())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
