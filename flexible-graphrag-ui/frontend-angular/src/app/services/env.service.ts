@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 import { Observable, of } from 'rxjs';
 import { catchError, map, tap } from 'rxjs/operators';
+import '../../env-config'; // Import to ensure type declarations are available
 
 /**
  * Service for accessing environment variables from .env file
@@ -60,5 +61,19 @@ export class EnvService {
   get defaultFolderPath(): string {
     // Only use the standardized variable name
     return this.get('PROCESS_FOLDER_PATH', environment.defaultFolderPath);
+  }
+
+  /**
+   * Get the CMIS base URL from runtime config or fallback to environment.ts
+   */
+  get cmisBaseUrl(): string {
+    return window.__env?.CMIS_BASE_URL || environment.cmisBaseUrl;
+  }
+
+  /**
+   * Get the Alfresco base URL from runtime config or fallback to environment.ts
+   */
+  get alfrescoBaseUrl(): string {
+    return window.__env?.ALFRESCO_BASE_URL || environment.alfrescoBaseUrl;
   }
 }

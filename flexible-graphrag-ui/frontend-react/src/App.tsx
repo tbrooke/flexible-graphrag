@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -81,13 +81,13 @@ const App: React.FC = () => {
   const [dataSource, setDataSource] = useState<string>('filesystem');
   const [folderPath, setFolderPath] = useState<string>(defaultFolderPath);
   
-  // CMIS state
-  const [cmisUrl, setCmisUrl] = useState<string>('http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom');
+  // CMIS state - use environment variables with fallback
+  const [cmisUrl, setCmisUrl] = useState<string>(`${import.meta.env.VITE_CMIS_BASE_URL || 'http://localhost:8080'}/alfresco/api/-default-/public/cmis/versions/1.1/atom`);
   const [cmisUsername, setCmisUsername] = useState<string>('admin');
   const [cmisPassword, setCmisPassword] = useState<string>('admin');
   
-  // Alfresco state
-  const [alfrescoUrl, setAlfrescoUrl] = useState<string>('http://localhost:8080/alfresco');
+  // Alfresco state - use environment variables with fallback
+  const [alfrescoUrl, setAlfrescoUrl] = useState<string>(`${import.meta.env.VITE_ALFRESCO_BASE_URL || 'http://localhost:8080'}/alfresco`);
   const [alfrescoUsername, setAlfrescoUsername] = useState<string>('admin');
   const [alfrescoPassword, setAlfrescoPassword] = useState<string>('admin');
   
@@ -96,6 +96,8 @@ const App: React.FC = () => {
   const [question, setQuestion] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [qaAnswer, setQaAnswer] = useState<string>('');
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [lastSearchQuery, setLastSearchQuery] = useState<string>('');
   
   // UI state
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -106,6 +108,17 @@ const App: React.FC = () => {
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const [currentProcessingId, setCurrentProcessingId] = useState<string | null>(null);
   const [statusData, setStatusData] = useState<any>(null);
+
+  // Memoized placeholder values (safer than using import.meta.env in JSX)
+  const cmisPlaceholder = useMemo(() => {
+    const baseUrl = import.meta.env.VITE_CMIS_BASE_URL || 'http://localhost:8080';
+    return `e.g., ${baseUrl}/alfresco/api/-default-/public/cmis/versions/1.1/atom`;
+  }, []);
+
+  const alfrescoPlaceholder = useMemo(() => {
+    const baseUrl = import.meta.env.VITE_ALFRESCO_BASE_URL || 'http://localhost:8080';
+    return `e.g., ${baseUrl}/alfresco`;
+  }, []);
 
   // Clear messages when data source changes
   useEffect(() => {
@@ -130,7 +143,7 @@ const App: React.FC = () => {
         setProcessingStatus('');
         setProcessingProgress(0);
         setCurrentProcessingId(null);
-        setSuccessMessage('Documents ingested successfully!');
+        setSuccessMessage(status.message || 'Documents ingested successfully!');
       } else if (status.status === 'failed') {
         setIsProcessing(false);
         setProcessingStatus('');
@@ -264,6 +277,7 @@ const App: React.FC = () => {
       setError('');
       setSearchResults([]);
       setQaAnswer('');
+      setLastSearchQuery(question);
       
       const queryType = activeTab === 'search' ? 'hybrid' : 'qa';
       const request: QueryRequest = {
@@ -275,12 +289,14 @@ const App: React.FC = () => {
       const response = await axios.post<ApiResponse>('/api/search', request);
       
       if (response.data.success) {
+        setHasSearched(true);
         if (activeTab === 'search' && response.data.results) {
           setSearchResults(response.data.results);
         } else if (activeTab === 'qa' && response.data.answer) {
           setQaAnswer(response.data.answer);
         }
       } else {
+        setHasSearched(true);
         setError(response.data.error || 'Error executing query');
       }
     } catch (err) {
@@ -289,6 +305,7 @@ const App: React.FC = () => {
         ? err.response?.data?.detail || err.response?.data?.error || 'Error executing query'
         : 'An unknown error occurred';
       setError(errorMessage);
+      setHasSearched(true);
     } finally {
       setIsQuerying(false);
     }
@@ -321,7 +338,7 @@ const App: React.FC = () => {
               onChange={(e) => setCmisUrl(e.target.value)}
               size="small"
               sx={{ mb: 2 }}
-              placeholder="e.g., http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom"
+              placeholder={cmisPlaceholder}
             />
             <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
               <TextField
@@ -366,7 +383,7 @@ const App: React.FC = () => {
               onChange={(e) => setAlfrescoUrl(e.target.value)}
               size="small"
               sx={{ mb: 2 }}
-              placeholder="e.g., http://localhost:8080/alfresco"
+              placeholder={alfrescoPlaceholder}
             />
             <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
               <TextField
@@ -513,7 +530,14 @@ const App: React.FC = () => {
         
         <TabContext value={activeTab}>
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-            <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+            <Tabs value={activeTab} onChange={(e, newValue) => {
+              setActiveTab(newValue);
+              setSearchResults([]);
+              setQaAnswer('');
+              setError('');
+              setHasSearched(false);
+              setLastSearchQuery('');
+            }}>
               <Tab label="Hybrid Search" value="search" />
               <Tab label="Q&A Query" value="qa" />
             </Tabs>
@@ -562,6 +586,16 @@ const App: React.FC = () => {
                   </Paper>
                 ))}
               </Box>
+            )}
+            {hasSearched && searchResults.length === 0 && !isQuerying && (
+              <Paper sx={{ p: 3, mt: 2, textAlign: 'center' }} elevation={1}>
+                <Typography variant="h6" color="text.secondary" gutterBottom>
+                  No results found
+                </Typography>
+                <Typography variant="body1" color="text.secondary">
+                  No results found for "{lastSearchQuery}". Try different search terms.
+                </Typography>
+              </Paper>
             )}
           </TabPanel>
           

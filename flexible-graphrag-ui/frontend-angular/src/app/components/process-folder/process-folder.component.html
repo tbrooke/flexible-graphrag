@@ -36,7 +36,7 @@
           <input 
             matInput 
             formControlName="cmisUrl"
-            placeholder="http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom"
+            [placeholder]="environment.cmisBaseUrl + '/alfresco/api/-default-/public/cmis/versions/1.1/atom'"
             [disabled]="isProcessing"
           >
         </mat-form-field>
@@ -86,7 +86,7 @@
           <input 
             matInput 
             formControlName="alfrescoUrl"
-            placeholder="http://localhost:8080/alfresco"
+            [placeholder]="environment.alfrescoBaseUrl + '/alfresco'"
             [disabled]="isProcessing"
           >
         </mat-form-field>

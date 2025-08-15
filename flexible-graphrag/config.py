@@ -1,7 +1,7 @@
 from enum import Enum
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 import os
 import json
 
@@ -11,16 +11,19 @@ class DataSourceType(str, Enum):
     ALFRESCO = "alfresco"
 
 class VectorDBType(str, Enum):
+    NONE = "none"  # Disable vector search
     QDRANT = "qdrant"
     NEO4J = "neo4j"
     ELASTICSEARCH = "elasticsearch"
     OPENSEARCH = "opensearch"
 
 class GraphDBType(str, Enum):
+    NONE = "none"  # Disable graph search
     NEO4J = "neo4j"
     KUZU = "kuzu"
 
 class SearchDBType(str, Enum):
+    NONE = "none"  # Disable fulltext search
     BM25 = "bm25"  # Built-in BM25 from LlamaIndex (default)
     ELASTICSEARCH = "elasticsearch"
     OPENSEARCH = "opensearch"
@@ -65,8 +68,9 @@ an aristocratic family that rules the planet Caladan, the rainy planet, since 10
     llm_provider: LLMProvider = LLMProvider.OPENAI
     llm_config: Dict[str, Any] = {}
     
-    # Optional schema
-    schema_config: Optional[Dict[str, Any]] = None
+    # Schema system
+    schema_name: str = Field("none", description="Name of schema to use: 'none', 'default', or custom name")
+    schemas: List[Dict[str, Any]] = Field(default_factory=list, description="Array of named schemas")
     
     # Knowledge graph extraction control
     enable_knowledge_graph: bool = Field(True, description="Enable knowledge graph extraction for graph functionality")
@@ -153,9 +157,30 @@ an aristocratic family that rules the planet Caladan, the rainy planet, since 10
                 self.vector_db_config = {
                     "username": os.getenv("NEO4J_USER", "neo4j"),
                     "password": os.getenv("NEO4J_PASSWORD", "password"),
-                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7687"),  # Standard Neo4j port
                     "database": os.getenv("NEO4J_DATABASE", "neo4j"),
+                    "index_name": os.getenv("NEO4J_VECTOR_INDEX", "hybrid_search_vector"),
                     "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024
+                }
+            elif self.vector_db == VectorDBType.QDRANT:
+                self.vector_db_config = {
+                    "host": os.getenv("QDRANT_HOST", "localhost"),
+                    "port": int(os.getenv("QDRANT_PORT", "6333")),
+                    "api_key": os.getenv("QDRANT_API_KEY"),
+                    "collection_name": os.getenv("QDRANT_COLLECTION", "hybrid_search"),
+                    "https": os.getenv("QDRANT_HTTPS", "false").lower() == "true",
+                    "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024  # Ollama compatibility
+                }
+            elif self.vector_db == VectorDBType.OPENSEARCH:
+                self.vector_db_config = {
+                    "url": os.getenv("OPENSEARCH_URL", "http://localhost:9201"),
+                    "index_name": os.getenv("OPENSEARCH_INDEX", "hybrid_search_vector"),
+                    "username": os.getenv("OPENSEARCH_USERNAME"),
+                    "password": os.getenv("OPENSEARCH_PASSWORD"),
+                    "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024,  # Ollama compatibility
+                    "embedding_field": "embedding",
+                    "text_field": "content",
+                    "search_pipeline": "hybrid-search-pipeline"
                 }
         
         if not self.graph_db_config:
@@ -163,9 +188,47 @@ an aristocratic family that rules the planet Caladan, the rainy planet, since 10
                 self.graph_db_config = {
                     "username": os.getenv("NEO4J_USER", "neo4j"),
                     "password": os.getenv("NEO4J_PASSWORD", "password"),
-                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+                    "url": os.getenv("NEO4J_URI", "bolt://localhost:7689"),  # Updated default port
                     "database": os.getenv("NEO4J_DATABASE", "neo4j")
                 }
+        
+        if not self.search_db_config:
+            if self.search_db == SearchDBType.OPENSEARCH:
+                self.search_db_config = {
+                    "url": os.getenv("OPENSEARCH_URL", "http://localhost:9201"),
+                    "index_name": os.getenv("OPENSEARCH_INDEX", "hybrid_search_fulltext"),
+                    "username": os.getenv("OPENSEARCH_USERNAME"),
+                    "password": os.getenv("OPENSEARCH_PASSWORD"),
+                    "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024,  # Ollama compatibility
+                    "embedding_field": "embedding",
+                    "text_field": "content"
+                }
+            elif self.search_db == SearchDBType.ELASTICSEARCH:
+                self.search_db_config = {
+                    "url": os.getenv("ELASTICSEARCH_URL", "http://localhost:9200"),
+                    "index_name": os.getenv("ELASTICSEARCH_INDEX", "hybrid_search_fulltext"),
+                    "username": os.getenv("ELASTICSEARCH_USERNAME"),
+                    "password": os.getenv("ELASTICSEARCH_PASSWORD"),
+                    "embed_dim": 1536 if self.llm_provider == LLMProvider.OPENAI else 1024  # Ollama compatibility
+                }
+    
+    def get_active_schema(self) -> Optional[Dict[str, Any]]:
+        """Get the currently active schema based on schema_name"""
+        if self.schema_name == "none":
+            return None
+        elif self.schema_name == "default":
+            return SAMPLE_SCHEMA
+        else:
+            # Look for named schema in schemas array
+            for schema_def in self.schemas:
+                if schema_def.get("name") == self.schema_name:
+                    return schema_def.get("schema", {})
+            
+            # If named schema not found, log warning and return None
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Schema '{self.schema_name}' not found in schemas array. Available schemas: {[s.get('name') for s in self.schemas]}")
+            return None
 
     model_config = {
         "env_file": ".env",
@@ -176,20 +239,39 @@ an aristocratic family that rules the planet Caladan, the rainy planet, since 10
 
 # Sample schema configuration
 SAMPLE_SCHEMA = {
-    "entities": ["Person", "Organization", "Location", "Technology", "Project", "Document"],
-    "relations": ["WORKS_FOR", "LOCATED_IN", "USES", "COLLABORATES_WITH", "DEVELOPS", "MENTIONS"],
+    "entities": Literal["PERSON", "ORGANIZATION", "LOCATION", "TECHNOLOGY", "PROJECT", "DOCUMENT"],
+    "relations": Literal["WORKS_FOR", "LOCATED_IN", "USES", "COLLABORATES_WITH", "DEVELOPS", "MENTIONS"],
     "validation_schema": {
         "relationships": [
-            ("Person", "WORKS_FOR", "Organization"),
-            ("Person", "LOCATED_IN", "Location"),
-            ("Organization", "USES", "Technology"),
-            ("Person", "COLLABORATES_WITH", "Person"),
-            ("Organization", "DEVELOPS", "Project"),
-            ("Document", "MENTIONS", "Person"),
-            ("Document", "MENTIONS", "Organization"),
-            ("Document", "MENTIONS", "Technology")
+            ("PERSON", "WORKS_FOR", "ORGANIZATION"),
+            ("PERSON", "LOCATED_IN", "LOCATION"),
+            ("ORGANIZATION", "USES", "TECHNOLOGY"),
+            ("PERSON", "COLLABORATES_WITH", "PERSON"),
+            ("ORGANIZATION", "DEVELOPS", "PROJECT"),
+            ("DOCUMENT", "MENTIONS", "PERSON"),
+            ("DOCUMENT", "MENTIONS", "ORGANIZATION"),
+            ("DOCUMENT", "MENTIONS", "TECHNOLOGY")
         ]
     },
     "strict": False,
+    "max_triplets_per_chunk": 15
+}
+
+# Kuzu-specific schema that uses only Entity and Chunk labels
+KUZU_SCHEMA = {
+    "entities": Literal["Entity"],  # Use Literal type for Pydantic compatibility
+    "relations": Literal["WORKS_FOR", "LOCATED_IN", "USES", "COLLABORATES_WITH", "DEVELOPS", "MENTIONS"],
+    "validation_schema": {
+        "relationships": [
+            ("Entity", "WORKS_FOR", "Entity"),
+            ("Entity", "LOCATED_IN", "Entity"),
+            ("Entity", "USES", "Entity"),
+            ("Entity", "COLLABORATES_WITH", "Entity"),
+            ("Entity", "DEVELOPS", "Entity"),
+            ("Chunk", "MENTIONS", "Entity"),
+            ("Entity", "MENTIONS", "Entity")
+        ]
+    },
+    "strict": True,  # Kuzu enforces stricter schema validation
     "max_triplets_per_chunk": 15
 }

@@ -31,6 +31,9 @@ export interface SearchResult {
   source: string;
   file_type: string;
   file_name: string;
+  metadata?: {
+    source?: string;
+  };
 }
 
 export interface ApiResponse<T = any> {

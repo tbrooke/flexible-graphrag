@@ -6,6 +6,7 @@ import { Subject, interval } from 'rxjs';
 import { ApiService } from '../../services/api.service';
 import { EnvService } from '../../services/env.service';
 import { AsyncProcessingResponse, ProcessingStatusResponse } from '../../models/api.models';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-process-folder',
@@ -19,6 +20,7 @@ export class ProcessFolderComponent implements OnInit, OnDestroy {
   form: FormGroup;
   isProcessing = false;
   processingStatus = '';
+  environment = environment; // Make environment accessible in template
   processingProgress = 0;
   currentProcessingId: string | null = null;
   statusData: any = null;
@@ -39,11 +41,11 @@ export class ProcessFolderComponent implements OnInit, OnDestroy {
       dataSource: ['filesystem', Validators.required],
       folderPath: [''],
       // CMIS fields
-      cmisUrl: ['http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom'],
+      cmisUrl: [`${this.envService.cmisBaseUrl}/alfresco/api/-default-/public/cmis/versions/1.1/atom`],
       cmisUsername: ['admin'],
       cmisPassword: ['admin'],
       // Alfresco fields
-      alfrescoUrl: ['http://localhost:8080/alfresco'],
+      alfrescoUrl: [`${this.envService.alfrescoBaseUrl}/alfresco`],
       alfrescoUsername: ['admin'],
       alfrescoPassword: ['admin']
     });
@@ -184,7 +186,7 @@ export class ProcessFolderComponent implements OnInit, OnDestroy {
           }
           
           if (status.status === 'completed') {
-            this.handleProcessingComplete(formValue);
+            this.handleProcessingComplete(formValue, status.message);
           } else if (status.status === 'failed') {
             this.handleProcessingError(status.error || 'Processing failed');
           } else if (status.status === 'cancelled') {
@@ -197,14 +199,14 @@ export class ProcessFolderComponent implements OnInit, OnDestroy {
       });
   }
 
-  private handleProcessingComplete(formValue: any): void {
+  private handleProcessingComplete(formValue: any, completionMessage?: string): void {
     this.isProcessing = false;
     this.processingStatus = '';
     this.processingProgress = 0;
     this.currentProcessingId = null;
     
-    // Show success message in-window instead of popup
-    this.successMessage = 'Documents ingested successfully!';
+    // Show backend's completion message (more accurate than generic message)
+    this.successMessage = completionMessage || 'Documents ingested successfully!';
     this.errorMessage = '';
     
     this.processed.emit({ 

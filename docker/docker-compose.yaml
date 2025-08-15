@@ -1,0 +1,28 @@
+# Flexible GraphRAG - Main Docker Compose
+
+# This is the primary compose file for both running servers and databases in docker for use
+# by external flexible-graphrag for development and 
+# for deployment of flexible-graphrag along with databases in docker
+
+# Docker Compose v2 doesn't require version field
+
+# Include or comment out (if have externally or don't need) services
+include:
+   - includes/neo4j.yaml          # Neo4j graph database
+   - includes/kuzu.yaml            # Kuzu graph database with API server
+   - includes/qdrant.yaml          # Commented - using existing external container  
+   - includes/elasticsearch-dev.yaml  # Elasticsearch with security disabled
+   - includes/kibana-simple.yaml       # Kibana working configuration
+   - includes/opensearch.yaml      # Commented - using elasticsearch instead
+   - includes/alfresco.yaml        # Alfresco content management system
+   # commented out app-stack.yaml and proxy.yaml currently using external/standalone flexible-graphrag 
+   # backend and ui clients, but using databases in docker
+   #- includes/app-stack.yaml       # backend and ui clients
+   #- includes/proxy.yaml           # proxy for backend and ui clients
+
+# Volumes are defined in individual include files
+
+# Global network for service communication
+networks:
+  flexible-graphrag:
+    driver: bridge

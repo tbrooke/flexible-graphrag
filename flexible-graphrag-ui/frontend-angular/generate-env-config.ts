@@ -1,73 +1,32 @@
-/**
- * Script to generate env-config.json from .env file
- * Run with: npx ts-node generate-env-config.ts
- */
 import * as fs from 'fs';
 import * as path from 'path';
-import * as dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
 
-// Get directory name in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * Script to generate env-config.json from environment variables
+ * This allows Docker containers to override URLs at runtime
+ */
 
-// Load .env file
-const envFilePath = path.resolve(__dirname, '.env');
-const envSamplePath = path.resolve(__dirname, 'dot-env-sample.txt');
-const outputPath = path.resolve(__dirname, 'src/assets/env-config.json');
+interface EnvConfig {
+  PROCESS_FOLDER_PATH: string;
+  CMIS_BASE_URL?: string;
+  ALFRESCO_BASE_URL?: string;
+}
 
-// Default configuration
-const defaultConfig = {
-  DEFAULT_FOLDER_PATH: '/Shared/GraphRAG'
+// Default values (for standalone mode)
+const defaultConfig: EnvConfig = {
+  PROCESS_FOLDER_PATH: process.env.PROCESS_FOLDER_PATH || '/Shared/GraphRAG',
+  CMIS_BASE_URL: process.env.CMIS_BASE_URL || 'http://localhost:8080',
+  ALFRESCO_BASE_URL: process.env.ALFRESCO_BASE_URL || 'http://localhost:8080'
 };
 
-// Create output directory if it doesn't exist
-const outputDir = path.dirname(outputPath);
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
+// For Docker mode, override with Docker networking URLs
+if (process.env.DOCKER_MODE === 'true') {
+  defaultConfig.CMIS_BASE_URL = process.env.CMIS_BASE_URL || 'http://host.docker.internal:8080';
+  defaultConfig.ALFRESCO_BASE_URL = process.env.ALFRESCO_BASE_URL || 'http://host.docker.internal:8080';
 }
 
-try {
-  // Try to load .env file
-  if (fs.existsSync(envFilePath)) {
-    console.log(`Loading environment from ${envFilePath}`);
-    const envConfig = dotenv.parse(fs.readFileSync(envFilePath));
-    
-    // Create config object with values from .env
-    const config = {
-      ...defaultConfig,
-      ...envConfig
-    };
-    
-    // Write to output file
-    fs.writeFileSync(outputPath, JSON.stringify(config, null, 2));
-    console.log(`Environment configuration written to ${outputPath}`);
-  } else {
-    // If .env doesn't exist, use sample or defaults
-    console.log(`.env file not found at ${envFilePath}`);
-    
-    if (fs.existsSync(envSamplePath)) {
-      console.log(`Using sample from ${envSamplePath}`);
-      const sampleConfig = dotenv.parse(fs.readFileSync(envSamplePath));
-      
-      const config = {
-        ...defaultConfig,
-        ...sampleConfig
-      };
-      
-      fs.writeFileSync(outputPath, JSON.stringify(config, null, 2));
-      console.log(`Environment configuration written to ${outputPath}`);
-    } else {
-      // Use defaults
-      console.log(`Using default configuration`);
-      fs.writeFileSync(outputPath, JSON.stringify(defaultConfig, null, 2));
-      console.log(`Default configuration written to ${outputPath}`);
-    }
-  }
-} catch (error) {
-  console.error('Error generating environment configuration:', error);
-  
-  // Write defaults on error
-  fs.writeFileSync(outputPath, JSON.stringify(defaultConfig, null, 2));
-  console.log(`Default configuration written to ${outputPath} due to error`);
-}
+// Write the configuration to the assets directory
+const outputPath = path.join(__dirname, 'src', 'assets', 'env-config.json');
+fs.writeFileSync(outputPath, JSON.stringify(defaultConfig, null, 2));
+
+console.log('Generated env-config.json:', defaultConfig);

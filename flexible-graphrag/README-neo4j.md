@@ -90,7 +90,7 @@ MATCH (n) DETACH DELETE n
 MATCH (n) RETURN n
 
 // 3. Drop LlamaIndex indexes
-DROP INDEX vector IF EXISTS;
+DROP INDEX hybrid_search_vector IF EXISTS;
 DROP INDEX entity IF EXISTS;
 
 // 4. Drop LlamaIndex constraints  

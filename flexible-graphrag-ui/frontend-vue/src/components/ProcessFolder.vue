@@ -32,7 +32,7 @@
           variant="outlined"
           :disabled="isProcessing"
           class="mb-4"
-          placeholder="e.g., http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom"
+          :placeholder="cmisPlaceholder"
         ></v-text-field>
         <v-row>
           <v-col cols="6">
@@ -73,7 +73,7 @@
           variant="outlined"
           :disabled="isProcessing"
           class="mb-4"
-          placeholder="e.g., http://localhost:8080/alfresco"
+          :placeholder="alfrescoPlaceholder"
         ></v-text-field>
         <v-row>
           <v-col cols="6">
@@ -209,13 +209,13 @@ const dataSourceOptions = [
 const dataSource = ref('filesystem');
 const folderPath = ref(defaultFolderPath);
 
-// CMIS fields
-const cmisUrl = ref('http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom');
+// CMIS fields - use environment variables with fallback
+const cmisUrl = ref(`${import.meta.env.VITE_CMIS_BASE_URL || 'http://localhost:8080'}/alfresco/api/-default-/public/cmis/versions/1.1/atom`);
 const cmisUsername = ref('admin');
 const cmisPassword = ref('admin');
 
-// Alfresco fields
-const alfrescoUrl = ref('http://localhost:8080/alfresco');
+// Alfresco fields - use environment variables with fallback
+const alfrescoUrl = ref(`${import.meta.env.VITE_ALFRESCO_BASE_URL || 'http://localhost:8080'}/alfresco`);
 const alfrescoUsername = ref('admin');
 const alfrescoPassword = ref('admin');
 
@@ -227,6 +227,17 @@ const processingStatus = ref('');
 const processingProgress = ref(0);
 const currentProcessingId = ref<string | null>(null);
 const statusData = ref<any>(null);
+
+// Computed properties for placeholders (safer than using import.meta.env in templates)
+const cmisPlaceholder = computed(() => {
+  const baseUrl = import.meta.env.VITE_CMIS_BASE_URL || 'http://localhost:8080';
+  return `e.g., ${baseUrl}/alfresco/api/-default-/public/cmis/versions/1.1/atom`;
+});
+
+const alfrescoPlaceholder = computed(() => {
+  const baseUrl = import.meta.env.VITE_ALFRESCO_BASE_URL || 'http://localhost:8080';
+  return `e.g., ${baseUrl}/alfresco`;
+});
 
 // Computed property for form validation
 const isFormValid = computed(() => {
@@ -276,7 +287,7 @@ const pollProcessingStatus = async (processingId: string): Promise<void> => {
       processingStatus.value = '';
       processingProgress.value = 0;
       currentProcessingId.value = null;
-      success.value = 'Documents ingested successfully!';
+      success.value = status.message || 'Documents ingested successfully!';
       emit('processed', { 
         dataSource: dataSource.value, 
         path: folderPath.value 

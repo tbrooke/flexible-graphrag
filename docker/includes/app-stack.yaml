@@ -1,0 +1,145 @@
+# Flexible GraphRAG Application Stack
+services:
+  # Backend FastAPI service
+  flexible-graphrag-backend:
+    build: 
+      context: ../../flexible-graphrag
+      dockerfile: Dockerfile
+    container_name: flexible-graphrag-backend
+    environment:
+      # Data source (can switch between alfresco and filesystem)
+      - DATA_SOURCE=alfresco
+      - SOURCE_PATHS=["./sample_docs"]
+      - ENABLE_KNOWLEDGE_GRAPH=true
+      - SCHEMA_NAME=default
+      
+      # Alfresco configuration (for when DATA_SOURCE=alfresco)
+      - ALFRESCO_URL=http://host.docker.internal:8080/alfresco
+      - ALFRESCO_USERNAME=admin
+      - ALFRESCO_PASSWORD=admin
+      - ALFRESCO_PATH=/Shared/GraphRAG
+      
+      # CMIS configuration for Alfresco
+      - CMIS_URL=http://host.docker.internal:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom
+      - CMIS_USERNAME=admin
+      - CMIS_PASSWORD=admin
+      
+      # Database configuration 
+      - VECTOR_DB=qdrant
+      - GRAPH_DB=neo4j
+      - SEARCH_DB=elasticsearch
+      
+      # Graph DB Configuration Examples:
+      # Neo4j (current):
+      # (configured above)
+      # Kuzu (alternative):
+      #- GRAPH_DB=kuzu
+      #- 'GRAPH_DB_CONFIG={"db_path": "./kuzu_db"}'
+      
+      # Neo4j configuration
+      - NEO4J_URI=bolt://host.docker.internal:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
+      - 'GRAPH_DB_CONFIG={"url": "bolt://host.docker.internal:7687", "username": "neo4j", "password": "password"}'
+      
+      # Vector DB Configuration Examples:
+      # Qdrant (current):
+      - 'VECTOR_DB_CONFIG={"host": "host.docker.internal", "port": 6333, "collection_name": "hybrid_search_vector"}'
+      # Neo4j Vector (alternative):
+      #- VECTOR_DB=neo4j  
+      #- 'VECTOR_DB_CONFIG={"url": "bolt://host.docker.internal:7687", "username": "neo4j", "password": "password", "index_name": "hybrid_search_vector"}'
+      # Elasticsearch Vector (alternative):
+      #- VECTOR_DB=elasticsearch
+      #- 'VECTOR_DB_CONFIG={"url": "http://host.docker.internal:9200", "index_name": "hybrid_search_vector"}'
+      # OpenSearch Vector (alternative):
+      #- VECTOR_DB=opensearch  
+      #- 'VECTOR_DB_CONFIG={"url": "http://host.docker.internal:9201", "index_name": "hybrid_search_vector"}'
+      
+      # LLM configuration (Ollama) - Active
+      - USE_OPENAI=false
+      - LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=llama3.1:8b
+      
+      # Optional: OpenAI (commented out - add OPENAI_API_KEY to use)
+      #- USE_OPENAI=true
+      #- LLM_PROVIDER=openai
+      #- OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      #- OPENAI_MODEL=gpt-4o-mini
+      
+      # Search DB Configuration Examples:
+      # Elasticsearch (current):
+      - ELASTICSEARCH_URL=http://host.docker.internal:9200
+      - 'SEARCH_DB_CONFIG={"url": "http://host.docker.internal:9200", "index_name": "hybrid_search_fulltext"}'
+      # OpenSearch (alternative):
+      #- SEARCH_DB=opensearch
+      #- OPENSEARCH_URL=http://host.docker.internal:9201
+      #- 'SEARCH_DB_CONFIG={"url": "http://host.docker.internal:9201", "index_name": "hybrid_search_fulltext"}'
+      # BM25 Local (alternative):
+      #- SEARCH_DB=bm25
+      #- BM25_PERSIST_DIR=./bm25_index
+      
+      # Additional Database URLs:
+      - QDRANT_HOST=host.docker.internal
+      - QDRANT_PORT=6333
+      - OPENSEARCH_URL=http://host.docker.internal:9201
+      
+      # Processing configuration
+      - CHUNK_SIZE=1024
+      - CHUNK_OVERLAP=128
+      - MAX_TRIPLETS_PER_CHUNK=10
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../sample-docs:/app/sample_docs:ro
+      - ../../uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Angular UI
+  flexible-graphrag-ui-angular:
+    build:
+      context: ../../flexible-graphrag-ui/frontend-angular
+      dockerfile: Dockerfile
+    container_name: flexible-graphrag-angular
+    environment:
+      - API_BASE_URL=/api
+    ports:
+      - "4200:4200"
+    depends_on:
+      - flexible-graphrag-backend
+    restart: unless-stopped
+
+  # React UI  
+  flexible-graphrag-ui-react:
+    build:
+      context: ../../flexible-graphrag-ui/frontend-react
+      dockerfile: Dockerfile
+    container_name: flexible-graphrag-react
+    environment:
+      - VITE_API_BASE_URL=/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - flexible-graphrag-backend
+    restart: unless-stopped
+
+  # Vue UI
+  flexible-graphrag-ui-vue:
+    build:
+      context: ../../flexible-graphrag-ui/frontend-vue
+      dockerfile: Dockerfile
+    container_name: flexible-graphrag-vue
+    environment:
+      - VITE_API_BASE_URL=/api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - flexible-graphrag-backend
+    restart: unless-stopped
+
+# Self-contained service definitions

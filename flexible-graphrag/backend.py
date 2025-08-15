@@ -6,6 +6,12 @@ This module contains the business logic that can be called by both FastAPI and F
 import logging
 import uuid
 import asyncio
+import sys
+
+# Fix for Windows event loop issues with Ollama/LlamaIndex
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 try:
     import nest_asyncio
     nest_asyncio.apply()
@@ -345,10 +351,12 @@ class FlexibleGraphRAGBackend:
                     status_callback=self._update_processing_status
                 )
                 
+                # Generate dynamic completion message based on enabled features
+                completion_message = self._generate_completion_message(len(cleaned_paths))
                 self._update_processing_status(
                     processing_id, 
                     "completed", 
-                    f"Successfully ingested {len(cleaned_paths)} document(s)! Knowledge graph and vector index ready.", 
+                    completion_message, 
                     100
                 )
                 
@@ -492,7 +500,11 @@ class FlexibleGraphRAGBackend:
         """Answer a question using the Q&A system"""
         try:
             query_engine = self.system.get_query_engine()
+            
+            # Use async methods as recommended by LlamaIndex error message
+            logger.info("Using async query method (aquery) for all LLM providers")
             response = await query_engine.aquery(query)
+            
             answer = str(response)
             return {"success": True, "answer": answer}
         except Exception as e:
@@ -503,7 +515,11 @@ class FlexibleGraphRAGBackend:
         """Query documents with AI-generated answers"""
         try:
             query_engine = self.system.get_query_engine()
+            
+            # Use async methods as recommended by LlamaIndex error message
+            logger.info("Using async query method (aquery) for all LLM providers")
             response = await query_engine.aquery(query)
+            
             return {"success": True, "answer": str(response)}
         except Exception as e:
             logger.error(f"Error during query: {str(e)}")
@@ -642,6 +658,33 @@ class FlexibleGraphRAGBackend:
     def health_check(self) -> Dict[str, Any]:
         """Health check"""
         return {"success": True, "status": "ok"}
+    
+    def _generate_completion_message(self, doc_count: int) -> str:
+        """Generate dynamic completion message based on enabled features"""
+        # Check what's actually enabled
+        has_vector = str(self.settings.vector_db) != "none"
+        has_graph = str(self.settings.graph_db) != "none" and self.settings.enable_knowledge_graph
+        has_search = str(self.settings.search_db) != "none"
+        
+        # Build feature list
+        features = []
+        if has_vector:
+            features.append("vector index")
+        if has_graph:
+            features.append("knowledge graph")
+        if has_search:
+            if self.settings.search_db == "bm25":
+                features.append("BM25 search")
+            else:
+                features.append(f"{self.settings.search_db} search")
+        
+        # Create appropriate message
+        if features:
+            feature_text = " and ".join(features)
+            return f"Successfully ingested {doc_count} document(s)! {feature_text.title()} ready."
+        else:
+            # Fallback (shouldn't happen due to validation)
+            return f"Successfully ingested {doc_count} document(s)!"
 
 # Global backend instance
 _backend_instance = None

@@ -1,4 +1,4 @@
-from llama_index.core import VectorStoreIndex, PropertyGraphIndex, StorageContext, Settings
+from llama_index.core import VectorStoreIndex, PropertyGraphIndex, StorageContext, Settings, QueryBundle
 from llama_index.core.retrievers import QueryFusionRetriever
 from llama_index.retrievers.bm25 import BM25Retriever
 from llama_index.core.ingestion import IngestionPipeline
@@ -10,7 +10,7 @@ from pathlib import Path
 import logging
 import asyncio
 
-from config import Settings as AppSettings, SAMPLE_SCHEMA, SearchDBType
+from config import Settings as AppSettings, SAMPLE_SCHEMA, SearchDBType, VectorDBType, LLMProvider
 from document_processor import DocumentProcessor
 from factories import LLMFactory, DatabaseFactory
 from sources import FileSystemSource, CmisSource, AlfrescoSource
@@ -23,10 +23,25 @@ class SchemaManager:
     def __init__(self, schema_config: Dict[str, Any] = None):
         self.schema_config = schema_config or {}
     
-    def create_extractor(self, llm, use_schema: bool = True):
+    def create_extractor(self, llm, use_schema: bool = True, force_schema_for_kuzu: bool = False):
         """Create knowledge graph extractor with optional schema enforcement"""
         
-        if not use_schema or not self.schema_config:
+        # Use schema if explicitly requested or if forced for Kuzu
+        if not use_schema and not force_schema_for_kuzu:
+            return SimpleLLMPathExtractor(
+                llm=llm,
+                max_paths_per_chunk=10,
+                num_workers=4
+            )
+        
+        # Get schema config - use provided or Kuzu-specific default for Kuzu
+        schema_to_use = self.schema_config
+        if force_schema_for_kuzu and not schema_to_use:
+            from config import KUZU_SCHEMA
+            logger.info("Using default KUZU_SCHEMA for Kuzu schema extraction")
+            schema_to_use = KUZU_SCHEMA
+        
+        if not schema_to_use:
             return SimpleLLMPathExtractor(
                 llm=llm,
                 max_paths_per_chunk=10,
@@ -36,11 +51,11 @@ class SchemaManager:
         # Create schema-guided extractor
         return SchemaLLMPathExtractor(
             llm=llm,
-            possible_entities=self.schema_config.get("entities", []),
-            possible_relations=self.schema_config.get("relations", []),
-            kg_validation_schema=self.schema_config.get("validation_schema"),
-            strict=self.schema_config.get("strict", True),
-            max_triplets_per_chunk=self.schema_config.get("max_triplets_per_chunk", 10),
+            possible_entities=schema_to_use.get("entities", []),
+            possible_relations=schema_to_use.get("relations", []),
+            kg_validation_schema=schema_to_use.get("validation_schema"),
+            strict=schema_to_use.get("strict", True),
+            max_triplets_per_chunk=schema_to_use.get("max_triplets_per_chunk", 10),
             num_workers=4
         )
 
@@ -50,11 +65,20 @@ class HybridSearchSystem:
     def __init__(self, config: AppSettings):
         self.config = config
         self.document_processor = DocumentProcessor(config)
-        self.schema_manager = SchemaManager(config.schema_config)
+        self.schema_manager = SchemaManager(config.get_active_schema())
         
         # Initialize LLM and embedding models
+        logger.info(f"Initializing LLM Provider: {config.llm_provider}")
         self.llm = LLMFactory.create_llm(config.llm_provider, config.llm_config)
         self.embed_model = LLMFactory.create_embedding_model(config.llm_provider, config.llm_config)
+        
+        # Log LLM configuration details
+        if hasattr(self.llm, 'model'):
+            logger.info(f"LLM Model: {self.llm.model}")
+        if hasattr(self.llm, 'base_url'):
+            logger.info(f"LLM Base URL: {self.llm.base_url}")
+        if hasattr(self.embed_model, 'model_name'):
+            logger.info(f"Embedding Model: {self.embed_model.model_name}")
         
         # Set global settings
         Settings.llm = self.llm
@@ -69,7 +93,7 @@ class HybridSearchSystem:
         self.graph_index = None
         self.hybrid_retriever = None
         
-        logger.info("HybridSearchSystem initialized successfully")
+        logger.info("HybridSearchSystem initialized successfully with Ollama!" if config.llm_provider == LLMProvider.OLLAMA else "HybridSearchSystem initialized successfully")
     
     def _setup_databases(self):
         """Initialize database connections based on configuration"""
@@ -77,25 +101,61 @@ class HybridSearchSystem:
         # Vector database
         self.vector_store = DatabaseFactory.create_vector_store(
             self.config.vector_db, 
-            self.config.vector_db_config or {}
+            self.config.vector_db_config or {},
+            self.config.llm_provider,
+            self.config.llm_config
         )
         
-        # Graph database
+        # Check if vector search is disabled
+        if self.vector_store is None:
+            logger.info("Vector search disabled - system will use only graph and/or fulltext search")
+        
+        # Graph database - pass vector store info and LLM config for Kuzu configuration
         self.graph_store = DatabaseFactory.create_graph_store(
             self.config.graph_db,
-            self.config.graph_db_config or {}
+            self.config.graph_db_config or {},
+            self.config.get_active_schema(),
+            has_separate_vector_store=(self.vector_store is not None),
+            llm_provider=self.config.llm_provider,
+            llm_config=self.config.llm_config
         )
         
-        # Search database - handle BM25 or external search engines
-        if self.config.search_db == SearchDBType.BM25:
+        # Check if graph search is disabled
+        if self.graph_store is None:
+            logger.info("Graph search disabled - system will use only vector and/or fulltext search")
+        
+        # Search database - handle BM25, external search engines, or none
+        if self.config.search_db == SearchDBType.NONE:
+            self.search_store = None
+            logger.info("Full-text search disabled - no search store created")
+        elif self.config.search_db == SearchDBType.BM25:
             self.search_store = None  # BM25 is handled by BM25Retriever
             logger.info("Using BM25 retriever for full-text search (no external search engine required)")
         else:
             self.search_store = DatabaseFactory.create_search_store(
                 self.config.search_db,
-                self.config.search_db_config or {}
+                self.config.search_db_config or {},
+                self.config.vector_db,  # Pass vector_db_type for OpenSearch hybrid detection
+                self.config.llm_provider,
+                self.config.llm_config
             )
-            logger.info(f"Using external search engine: {self.config.search_db}")
+            if self.search_store is not None:
+                logger.info(f"Using external search engine: {self.config.search_db}")
+            else:
+                logger.info(f"Search store creation skipped (handled by factories.py logic)")
+        
+        # Validate that at least one search modality is enabled
+        has_vector = str(self.config.vector_db) != "none"
+        has_graph = str(self.config.graph_db) != "none" 
+        has_search = str(self.config.search_db) != "none"
+        
+        if not (has_vector or has_graph or has_search):
+            raise ValueError(
+                "Invalid configuration: All search modalities are disabled! "
+                "At least one of VECTOR_DB, GRAPH_DB, or SEARCH_DB must be enabled (not 'none'). "
+                f"Current config: VECTOR_DB={self.config.vector_db}, "
+                f"GRAPH_DB={self.config.graph_db}, SEARCH_DB={self.config.search_db}"
+            )
         
         logger.info("Database connections established")
     
@@ -157,6 +217,18 @@ class HybridSearchSystem:
         logger.info("Processing documents into nodes...")
         _update_progress("Splitting documents into chunks...", 30, current_phase="chunking")
         
+        # Store documents for later use in search store indexing (accumulative)
+        if not hasattr(self, '_last_ingested_documents') or self._last_ingested_documents is None:
+            self._last_ingested_documents = []
+        
+        # Add new documents to existing collection
+        self._last_ingested_documents.extend(documents)
+        logger.info(f"Added {len(documents)} documents. Total stored: {len(self._last_ingested_documents)}")
+        for i, doc in enumerate(documents):
+            content_preview = doc.text[:100] + "..." if len(doc.text) > 100 else doc.text
+            logger.info(f"New doc {i}: {content_preview}")
+            logger.info(f"New doc {i} metadata: {doc.metadata}")
+        
         transformations = [
             SentenceSplitter(
                 chunk_size=self.config.chunk_size,
@@ -189,74 +261,122 @@ class HybridSearchSystem:
             logger.info("Processing cancelled during node generation")
             raise RuntimeError("Processing cancelled by user")
         
-        # Step 3: Create vector index from processed nodes
-        logger.info("Creating vector index from nodes...")
-        _update_progress("Building vector index...", 50, current_phase="indexing")
-        
-        vector_storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
-        self.vector_index = VectorStoreIndex(
-            nodes=nodes,
-            storage_context=vector_storage_context,
-            show_progress=True
-        )
+        # Step 3: Create vector index from processed nodes (if vector search enabled)
+        if self.vector_store is not None:
+            logger.info("Creating vector index from nodes...")
+            _update_progress("Building vector index...", 50, current_phase="indexing")
+            
+            vector_storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+            self.vector_index = VectorStoreIndex(
+                nodes=nodes,
+                storage_context=vector_storage_context,
+                show_progress=True
+            )
+        else:
+            logger.info("Vector search disabled - skipping vector index creation")
+            _update_progress("Vector search disabled - skipping vector index...", 50, current_phase="indexing")
+            self.vector_index = None
         
         # Check for cancellation after vector index creation
         if _check_cancellation():
             logger.info("Processing cancelled during vector index creation")
             raise RuntimeError("Processing cancelled by user")
         
-        # Step 4: Create graph index using the same nodes but with minimal knowledge graph extraction  
-        logger.info("Creating graph index from same nodes...")
-        _update_progress("Extracting knowledge graph...", 70, current_phase="kg_extraction")
-        
-        # Always use knowledge graph extraction for graph functionality
-        kg_extractors = []
-        if self.config.schema_config is not None:
-            kg_extractor = self.schema_manager.create_extractor(
-                self.llm, 
-                use_schema=True
-            )
-            kg_extractors = [kg_extractor]
-            logger.info("Using knowledge graph extraction with schema for graph functionality")
+        # Step 4: Create graph index using the same nodes (only if knowledge graph is enabled)
+        if self.config.enable_knowledge_graph:
+            logger.info("Creating graph index from same nodes...")
+            _update_progress("Extracting knowledge graph...", 70, current_phase="kg_extraction")
+            
+            # Use knowledge graph extraction for graph functionality
+            kg_extractors = []
+            
+            # Check schema configuration based on database type and schema_name
+            is_kuzu = str(self.config.graph_db) == "kuzu"
+            active_schema = self.config.get_active_schema()
+            has_schema = active_schema is not None
+            
+            # For Kuzu: always use schema (provided or default)
+            # For Neo4j: use schema only if explicitly configured
+            if is_kuzu or has_schema:
+                kg_extractor = self.schema_manager.create_extractor(
+                    self.llm, 
+                    use_schema=True,
+                    force_schema_for_kuzu=is_kuzu and not has_schema
+                )
+                kg_extractors = [kg_extractor]
+                if has_schema:
+                    logger.info(f"Using knowledge graph extraction with '{self.config.schema_name}' schema")
+                elif is_kuzu:
+                    logger.info("Using knowledge graph extraction with default schema for Kuzu")
+            else:
+                # Use simple extractor for Neo4j without schema
+                kg_extractor = self.schema_manager.create_extractor(
+                    self.llm, 
+                    use_schema=False
+                )
+                kg_extractors = [kg_extractor]
+                logger.info("Using simple knowledge graph extraction (no schema)")
         else:
-            # Use simple extractor if no schema provided
-            kg_extractor = self.schema_manager.create_extractor(
-                self.llm, 
-                use_schema=False
+            logger.info("Knowledge graph extraction disabled - skipping graph index creation")
+            _update_progress("Skipping knowledge graph extraction...", 70, current_phase="kg_extraction")
+            kg_extractors = []
+        
+        # Only create graph index if knowledge graph is enabled
+        if self.config.enable_knowledge_graph:
+            graph_storage_context = StorageContext.from_defaults(
+                property_graph_store=self.graph_store,
+                docstore=self.vector_index.docstore  # Share the same docstore
             )
-            kg_extractors = [kg_extractor]
-            logger.info("Using simple knowledge graph extraction for graph functionality")
-        
-        graph_storage_context = StorageContext.from_defaults(
-            property_graph_store=self.graph_store,
-            docstore=self.vector_index.docstore  # Share the same docstore
-        )
-        
-        # Use asyncio.get_event_loop().run_in_executor to avoid event loop conflict
-        import asyncio
-        import functools
-        
-        loop = asyncio.get_event_loop()
-        create_graph_index = functools.partial(
-            PropertyGraphIndex.from_documents,
-            documents=documents,
-            llm=self.llm,
-            embed_model=self.embed_model,
-            kg_extractors=kg_extractors,  # Use empty list if no schema
-            storage_context=graph_storage_context,
-            transformations=[],  # Skip transformations since already processed
-            show_progress=True,
-            # Configure to minimize LLM-generated text in responses
-            include_embeddings=True,
-            include_metadata=True
-        )
-        
-        self.graph_index = await loop.run_in_executor(None, create_graph_index)
-        
-        # Check for cancellation after graph index creation
-        if _check_cancellation():
-            logger.info("Processing cancelled during graph index creation")
-            raise RuntimeError("Processing cancelled by user")
+            
+            # Use asyncio.get_event_loop().run_in_executor to avoid event loop conflict
+            import asyncio
+            import functools
+            
+            loop = asyncio.get_event_loop()
+            # For Kuzu with separate vector store (Approach 2), we need to explicitly provide vector_store
+            graph_index_kwargs = {
+                "documents": documents,
+                "llm": self.llm,
+                "embed_model": self.embed_model,
+                "kg_extractors": kg_extractors,
+                "storage_context": graph_storage_context,
+                "transformations": [],  # Skip transformations since already processed
+                "show_progress": True,
+                "include_embeddings": True,
+                "include_metadata": True
+            }
+            
+            # If using Kuzu with separate vector store (Approach 2), provide explicit vector store
+            if str(self.config.graph_db) == "kuzu" and hasattr(self, 'vector_store') and self.vector_store:
+                graph_index_kwargs["vector_store"] = self.vector_store
+                logger.info("Using explicit vector store for Kuzu PropertyGraphIndex (Approach 2)")
+            
+            # DEBUG: Check if Kuzu tables exist just before PropertyGraphIndex creation
+            # COMMENTED OUT: Causes lock issues with Kuzu concurrency
+            # if str(self.config.graph_db) == "kuzu":
+            #     try:
+            #         import kuzu
+            #         db_path = self.config.graph_db_config.get("db_path", "./kuzu_db")
+            #         debug_db = kuzu.Database(db_path)
+            #         debug_conn = kuzu.Connection(debug_db)
+            #         result = debug_conn.execute("SHOW TABLES")
+            #         tables = result.get_as_df()
+            #         logger.info(f"DEBUG: Kuzu tables just before PropertyGraphIndex creation: {tables}")
+            #     except Exception as debug_error:
+            #         logger.warning(f"DEBUG: Could not check Kuzu tables before PropertyGraphIndex: {debug_error}")
+            
+            create_graph_index = functools.partial(PropertyGraphIndex.from_documents, **graph_index_kwargs)
+            
+            self.graph_index = await loop.run_in_executor(None, create_graph_index)
+            
+            # Check for cancellation after graph index creation
+            if _check_cancellation():
+                logger.info("Processing cancelled during graph index creation")
+                raise RuntimeError("Processing cancelled by user")
+        else:
+            # Skip graph index creation
+            self.graph_index = None
+            logger.info("Graph index creation skipped - knowledge graph disabled")
         
         # Step 4: Setup hybrid retriever
         self._setup_hybrid_retriever()
@@ -274,11 +394,12 @@ class HybridSearchSystem:
         if cmis_config:
             config = cmis_config
         else:
+            import os
             config = {
-                "url": self.config.llm_config.get("cmis_url"),
-                "username": self.config.llm_config.get("cmis_username"),
-                "password": self.config.llm_config.get("cmis_password"),
-                "folder_path": self.config.llm_config.get("cmis_folder_path", "/")
+                "url": os.getenv("CMIS_URL", "http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom"),
+                "username": os.getenv("CMIS_USERNAME", "admin"),
+                "password": os.getenv("CMIS_PASSWORD", "admin"),
+                "folder_path": os.getenv("CMIS_FOLDER_PATH", "/")
             }
         
         # Initialize CMIS source
@@ -406,11 +527,12 @@ class HybridSearchSystem:
         if alfresco_config:
             config = alfresco_config
         else:
+            import os
             config = {
-                "url": self.config.llm_config.get("alfresco_url"),
-                "username": self.config.llm_config.get("alfresco_username"),
-                "password": self.config.llm_config.get("alfresco_password"),
-                "path": self.config.llm_config.get("alfresco_path", "/")
+                "url": os.getenv("ALFRESCO_URL", "http://localhost:8080/alfresco"),
+                "username": os.getenv("ALFRESCO_USERNAME", "admin"),
+                "password": os.getenv("ALFRESCO_PASSWORD", "admin"),
+                "path": os.getenv("ALFRESCO_PATH", "/")
             }
         
         # Initialize Alfresco source
@@ -545,6 +667,12 @@ class HybridSearchSystem:
         # Create document from text
         document = self.document_processor.process_text_content(content, source_name)
         
+        # Store document for later use in search store indexing (accumulate rather than overwrite)
+        if not hasattr(self, '_last_ingested_documents') or self._last_ingested_documents is None:
+            self._last_ingested_documents = []
+        self._last_ingested_documents.append(document)
+        logger.info(f"Added text document to collection. Total documents: {len(self._last_ingested_documents)}")
+        
         # Check for cancellation after document processing
         if _check_cancellation():
             logger.info("Processing cancelled during text document creation")
@@ -660,57 +788,241 @@ class HybridSearchSystem:
     
     def _setup_hybrid_retriever(self):
         """Setup hybrid retriever combining all search modalities"""
+        logger.info(f"Setting up hybrid retriever - SEARCH_DB={self.config.search_db} (type: {type(self.config.search_db)})")
         
-        if not self.vector_index or not self.graph_index:
-            logger.warning("Cannot setup hybrid retriever: missing indexes")
+        # Check if we have at least one search modality enabled
+        has_vector = self.vector_index is not None
+        has_graph = self.config.enable_knowledge_graph and self.graph_index is not None
+        has_search = self.config.search_db != SearchDBType.NONE  # Any search DB type except 'none'
+        
+        if not (has_vector or has_graph or has_search):
+            logger.warning("Cannot setup hybrid retriever: no search modalities available")
             return
         
-        # Vector retriever
-        vector_retriever = self.vector_index.as_retriever(
-            similarity_top_k=10,
-            embed_model=self.embed_model
-        )
-        
-        # BM25 retriever for full-text search
-        bm25_config = {
-            "similarity_top_k": self.config.bm25_similarity_top_k,
-            "persist_dir": self.config.bm25_persist_dir
-        }
-        
-        # Ensure we have nodes in the docstore
-        if not self.vector_index.docstore.docs:
-            logger.warning("Docstore is empty, skipping BM25 retriever creation")
-            bm25_retriever = None
+        # Vector retriever (optional)
+        vector_retriever = None
+        opensearch_hybrid_retriever = None
+        if has_vector:
+            # Configure vector retriever based on database type
+            if self.config.vector_db == VectorDBType.OPENSEARCH:
+                # Check if we should use OpenSearch native hybrid search
+                if has_search and self.config.search_db == SearchDBType.OPENSEARCH:
+                    # Use OpenSearch native hybrid search with required parameters
+                    from llama_index.core.vector_stores.types import VectorStoreQueryMode
+                    opensearch_hybrid_retriever = self.vector_index.as_retriever(
+                        similarity_top_k=10,
+                        embed_model=self.embed_model,
+                        vector_store_query_mode=VectorStoreQueryMode.HYBRID,
+                        # Add required parameters for OpenSearch hybrid search
+                        search_pipeline="hybrid-search-pipeline"  # Use hybrid search pipeline
+                    )
+                    logger.info("OpenSearch native hybrid retriever created (vector + fulltext) with required parameters")
+                    # Skip individual vector retriever when using hybrid
+                    vector_retriever = None
+                else:
+                    # OpenSearch vector-only mode
+                    from llama_index.core.vector_stores.types import VectorStoreQueryMode
+                    vector_retriever = self.vector_index.as_retriever(
+                        similarity_top_k=10,
+                        embed_model=self.embed_model,
+                        vector_store_query_mode=VectorStoreQueryMode.DEFAULT  # Pure vector search
+                    )
+                    logger.info("OpenSearch vector retriever created with DEFAULT mode")
+            else:
+                # Other databases use standard retriever configuration
+                vector_retriever = self.vector_index.as_retriever(
+                    similarity_top_k=10,
+                    embed_model=self.embed_model
+                )
+                logger.info(f"{self.config.vector_db} vector retriever created")
         else:
-            logger.info(f"Creating BM25 retriever with {len(self.vector_index.docstore.docs)} documents")
-            bm25_retriever = DatabaseFactory.create_bm25_retriever(
-                docstore=self.vector_index.docstore,
-                config=bm25_config
+            logger.info("Vector search disabled - no vector retriever")
+        
+        # BM25 retriever for full-text search (only for builtin BM25, not OpenSearch)
+        bm25_retriever = None
+        logger.info(f"Checking BM25 condition: search_db={self.config.search_db}, SearchDBType.BM25={SearchDBType.BM25}")
+        
+        if self.config.search_db == SearchDBType.BM25:
+            # Use native BM25 retriever for built-in BM25 (OpenSearch uses VectorStoreQueryMode.TEXT_SEARCH instead)
+            bm25_config = {
+                "similarity_top_k": self.config.bm25_similarity_top_k,
+                "persist_dir": self.config.bm25_persist_dir
+            }
+            
+            # Get docstore - either from vector index or create standalone for BM25-only
+            docstore = None
+            if self.vector_index and self.vector_index.docstore.docs:
+                # Use existing vector index docstore
+                docstore = self.vector_index.docstore
+                logger.info(f"Creating BM25 retriever with {len(docstore.docs)} documents from vector index")
+            elif hasattr(self, '_last_ingested_documents') and self._last_ingested_documents:
+                # Create standalone docstore for BM25-only scenarios
+                from llama_index.core.storage.docstore import SimpleDocumentStore
+                docstore = SimpleDocumentStore()
+                # Add all documents at once to avoid overwriting
+                docstore.add_documents(self._last_ingested_documents)
+                logger.info(f"Created standalone docstore with {len(self._last_ingested_documents)} documents for BM25")
+                logger.info(f"Docstore now contains {len(docstore.docs)} documents")
+                
+                # Debug: Log document IDs and content preview
+                for doc_id, doc in docstore.docs.items():
+                    content_preview = doc.text[:100] + "..." if len(doc.text) > 100 else doc.text
+                    logger.info(f"Doc {doc_id}: {content_preview}")
+                    logger.info(f"Doc {doc_id} metadata: {doc.metadata}")
+            elif hasattr(self, '_last_ingested_documents'):
+                logger.warning(f"_last_ingested_documents exists but is empty: {self._last_ingested_documents}")
+            else:
+                logger.warning("_last_ingested_documents attribute not found - documents not stored during ingestion")
+                
+            if docstore:
+                bm25_retriever = DatabaseFactory.create_bm25_retriever(
+                    docstore=docstore,
+                    config=bm25_config
+                )
+                logger.info(f"Built-in BM25 retriever created successfully with {len(docstore.docs)} documents")
+            else:
+                logger.error("No docstore available - BM25 retriever creation failed")
+        else:
+            logger.info(f"No BM25 retriever needed for search_db={self.config.search_db}")
+        
+        # Graph retriever - configure to return original text from shared docstore (if enabled)
+        graph_retriever = None
+        if self.config.enable_knowledge_graph and self.graph_index:
+            graph_retriever = self.graph_index.as_retriever(
+                include_text=True,
+                similarity_top_k=5,
+                # Return original document text from the shared docstore, not knowledge graph extraction results
+                text_qa_template=None,  # Use default template
+                include_metadata=True
             )
         
-        # Graph retriever - configure to return original text from shared docstore
-        graph_retriever = self.graph_index.as_retriever(
-            include_text=True,
-            similarity_top_k=5,
-            # Return original document text from the shared docstore, not knowledge graph extraction results
-            text_qa_template=None,  # Use default template
-            include_metadata=True
-        )
+        # Create search retriever if configured (Elasticsearch or OpenSearch fulltext-only mode)
+        search_retriever = None
+        if self.search_store is not None and opensearch_hybrid_retriever is None:
+            try:
+                # Create search index using the same documents from ingestion
+                from llama_index.core import VectorStoreIndex, StorageContext
+                
+                # Use the documents from the last ingestion (stored during ingestion)
+                if hasattr(self, '_last_ingested_documents') and self._last_ingested_documents:
+                    documents = self._last_ingested_documents
+                    search_storage_context = StorageContext.from_defaults(vector_store=self.search_store)
+                    search_index = VectorStoreIndex.from_documents(
+                        documents,
+                        storage_context=search_storage_context,
+                        embed_model=self.embed_model
+                    )
+                    # Configure retriever based on search database type
+                    if self.config.search_db == SearchDBType.OPENSEARCH:
+                        # OpenSearch uses query modes for different search types
+                        from llama_index.core.vector_stores.types import VectorStoreQueryMode
+                        search_retriever = search_index.as_retriever(
+                            similarity_top_k=10,
+                            vector_store_query_mode=VectorStoreQueryMode.TEXT_SEARCH  # BM25 equivalent
+                        )
+                        logger.info(f"Created OpenSearch retriever with TEXT_SEARCH mode for BM25 fulltext search")
+                    else:
+                        # Elasticsearch uses strategy-based approach
+                        search_retriever = search_index.as_retriever(similarity_top_k=10)
+                        logger.info(f"Created {self.config.search_db} retriever with BM25 scoring for full-text search")
+                # Fallback: try to get documents from vector index docstore  
+                elif self.vector_index and self.vector_index.docstore.docs:
+                    documents = list(self.vector_index.docstore.docs.values())
+                    search_storage_context = StorageContext.from_defaults(vector_store=self.search_store)
+                    search_index = VectorStoreIndex.from_documents(
+                        documents,
+                        storage_context=search_storage_context,
+                        embed_model=self.embed_model
+                    )
+                    # Configure retriever based on search database type
+                    if self.config.search_db == SearchDBType.OPENSEARCH:
+                        # OpenSearch uses query modes for different search types
+                        from llama_index.core.vector_stores.types import VectorStoreQueryMode
+                        search_retriever = search_index.as_retriever(
+                            similarity_top_k=10,
+                            vector_store_query_mode=VectorStoreQueryMode.TEXT_SEARCH  # BM25 equivalent
+                        )
+                        logger.info(f"Created OpenSearch retriever with TEXT_SEARCH mode for BM25 fulltext search (from docstore)")
+                    else:
+                        # Elasticsearch uses strategy-based approach
+                        search_retriever = search_index.as_retriever(similarity_top_k=10)
+                        logger.info(f"Created {self.config.search_db} retriever with BM25 scoring (from docstore)")
+                else:
+                    logger.warning(f"No documents available for {self.config.search_db} indexing")
+            except Exception as e:
+                logger.warning(f"Failed to create {self.config.search_db} retriever: {str(e)} - continuing without it")
+                search_retriever = None
         
         # Combine retrievers with fusion
-        retrievers = [vector_retriever, graph_retriever]
-        if bm25_retriever is not None:
-            retrievers.insert(1, bm25_retriever)  # Add BM25 in the middle
-            logger.info("Fusion retriever created with vector, BM25, and graph retrievers")
-        else:
-            logger.info("Fusion retriever created with vector and graph retrievers only (BM25 skipped)")
+        retrievers = []
         
-        self.hybrid_retriever = QueryFusionRetriever(
-            retrievers=retrievers,
-            mode="reciprocal_rerank",
-            similarity_top_k=15,
-            num_queries=1
-        )
+        # Add OpenSearch hybrid retriever if available (combines vector + fulltext)
+        if opensearch_hybrid_retriever is not None:
+            retrievers.append(opensearch_hybrid_retriever)
+            logger.info("Added OpenSearch hybrid retriever (vector + fulltext) to fusion")
+        # Add vector retriever if available
+        elif vector_retriever is not None:
+            retrievers.append(vector_retriever)
+            logger.info("Added vector retriever to fusion")
+        else:
+            logger.info("Vector retriever not available")
+        
+        # Add text search retriever if available  
+        if bm25_retriever is not None:
+            retrievers.append(bm25_retriever)
+            logger.info("Added BM25 retriever to fusion")
+        elif search_retriever is not None:
+            retrievers.append(search_retriever)
+            logger.info(f"Added {self.config.search_db} retriever to fusion")
+        else:
+            logger.info("No text search retriever available")
+        
+        # Add graph retriever if available
+        if graph_retriever is not None:
+            retrievers.append(graph_retriever)
+            logger.info("Added graph retriever to fusion")
+        else:
+            logger.info("Graph retriever not available")
+        
+        # Build descriptive log message
+        retriever_types = []
+        if opensearch_hybrid_retriever is not None:
+            retriever_types.append("OpenSearch-hybrid")
+        elif vector_retriever is not None:
+            retriever_types.append("vector")
+        if bm25_retriever is not None:
+            retriever_types.append("BM25")
+        elif search_retriever is not None:
+            retriever_types.append(str(self.config.search_db))
+        if graph_retriever is not None:
+            retriever_types.append("graph")
+        
+        if not retrievers:
+            error_msg = (
+                "No retrievers available for fusion! This usually means all search modalities are disabled. "
+                f"Current config: VECTOR_DB={self.config.vector_db}, "
+                f"GRAPH_DB={self.config.graph_db}, SEARCH_DB={self.config.search_db}. "
+                "At least one must be enabled (not 'none')."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        logger.info(f"Fusion retriever created with {', '.join(retriever_types)} retrievers")
+        
+        # If only one retriever, use it directly for better relevance filtering
+        if len(retrievers) == 1:
+            self.hybrid_retriever = retrievers[0]
+            logger.info(f"Using single {retriever_types[0]} retriever directly (no fusion needed)")
+        else:
+            # Use QueryFusionRetriever for multiple retrievers (async should work fine now)
+            self.hybrid_retriever = QueryFusionRetriever(
+                retrievers=retrievers,
+                mode="reciprocal_rerank",
+                similarity_top_k=15,
+                num_queries=1,
+                use_async=True  # Enable async - dual retriever conflicts are resolved
+            )
+            logger.info(f"Using QueryFusionRetriever for multiple retrievers (async enabled)")
         
         logger.info("Hybrid retriever setup completed")
     
@@ -747,24 +1059,49 @@ class HybridSearchSystem:
         if not self.hybrid_retriever:
             raise ValueError("System not initialized. Please ingest documents first.")
         
-        # Check for partial initialization state
-        if not self.vector_index or not self.graph_index:
-            logger.warning("System in partial state - missing indexes, clearing and requiring re-ingestion")
+        logger.info(f"Searching for query: '{query}' with top_k={top_k}")
+        logger.info(f"Available documents: {len(self._last_ingested_documents) if hasattr(self, '_last_ingested_documents') else 0}")
+        
+        # Get raw results from retriever using async method
+        query_bundle = QueryBundle(query_str=query)
+        raw_results = await self.hybrid_retriever.aretrieve(query_bundle)
+        
+        # Filter out zero-relevance results with more aggressive threshold
+        # BM25 should not return docs with zero relevance, but some systems return very low scores
+        # Use a minimum threshold to filter out essentially irrelevant results
+        min_score_threshold = 0.001  # Filter anything below 0.001 (effectively zero)
+        filtered_results = [result for result in raw_results if result.score > min_score_threshold]
+        logger.info(f"Raw results: {len(raw_results)}, Filtered results (score > {min_score_threshold}): {len(filtered_results)}")
+        
+        # Log scores for debugging
+        for i, result in enumerate(raw_results):
+            logger.info(f"Result {i}: score={result.score:.3f}, text_preview={result.text[:50]}...")
+            
+        # Use filtered results for final processing
+        results = filtered_results[:top_k]
+        
+        # Check for partial initialization state - only require indexes that should be enabled
+        missing_required = False
+        
+        # Check vector index only if vector search is enabled
+        if str(self.config.vector_db) != "none" and not self.vector_index:
+            missing_required = True
+            logger.warning(f"Vector DB {self.config.vector_db} enabled but vector_index is missing")
+        
+        # Check graph index only if graph search is enabled AND knowledge graph extraction is enabled
+        if (str(self.config.graph_db) != "none" and 
+            self.config.enable_knowledge_graph and 
+            not self.graph_index):
+            missing_required = True
+            logger.warning(f"Graph DB {self.config.graph_db} enabled but graph_index is missing")
+        
+        if missing_required:
+            logger.warning("System in partial state - missing required indexes, clearing and requiring re-ingestion")
             self._clear_partial_state()
             raise ValueError("System not initialized. Please ingest documents first.")
         
-        try:
-            # Execute hybrid search
-            results = await self.hybrid_retriever.aretrieve(query)
-        except Exception as e:
-            # Check if this is a Neo4j vector index error indicating partial state
-            if "vector schema index" in str(e) or "There is no such vector schema index" in str(e):
-                logger.warning(f"Detected missing vector indexes in Neo4j: {str(e)}")
-                self._clear_partial_state()
-                raise ValueError("System not initialized. Please ingest documents first.")
-            else:
-                # Re-raise other errors
-                raise
+        # Results already retrieved and filtered above
+        # No need for additional async call
         
         logger.info(f"Retrieved {len(results)} results from hybrid search")
         
@@ -990,9 +1327,23 @@ class HybridSearchSystem:
         if not self.hybrid_retriever:
             raise ValueError("System not initialized. Please ingest documents first.")
         
-        # Check for partial initialization state
-        if not self.vector_index or not self.graph_index:
-            logger.warning("System in partial state - missing indexes, clearing and requiring re-ingestion")
+        # Check for partial initialization state - only require indexes that should be enabled
+        missing_required = False
+        
+        # Check vector index only if vector search is enabled
+        if str(self.config.vector_db) != "none" and not self.vector_index:
+            missing_required = True
+            logger.warning(f"Vector DB {self.config.vector_db} enabled but vector_index is missing")
+        
+        # Check graph index only if graph search is enabled AND knowledge graph extraction is enabled
+        if (str(self.config.graph_db) != "none" and 
+            self.config.enable_knowledge_graph and 
+            not self.graph_index):
+            missing_required = True
+            logger.warning(f"Graph DB {self.config.graph_db} enabled but graph_index is missing")
+        
+        if missing_required:
+            logger.warning("System in partial state - missing required indexes, clearing and requiring re-ingestion")
             self._clear_partial_state()
             raise ValueError("System not initialized. Please ingest documents first.")
         

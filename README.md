@@ -1,10 +1,13 @@
 # Flexible GraphRAG
 
-**Flexible GraphRAG** is a platform supporting document processing, knowledge graph auto-building, RAG and GraphRAG setup, hybrid and AI search capabilities.
-
-A configurable hybrid search system that combines vector similarity search, full-text search, and knowledge graph traversal across multiple data sources. Built with LlamaIndex, it provides both a FastAPI backend with REST endpoints and a Model Context Protocol (MCP) server for MCP clients like Claude Desktop, etc. Also has Angular, React, and Vue UI clients for using the system.
+**Flexible GraphRAG** is a platform supporting document processing, knowledge graph auto-building, RAG and GraphRAG setup, hybrid search (fulltext, vector, graph) and AI Q&A query capabilities.
 
 ## What It Is
+
+A configurable hybrid search system that optionally combines vector similarity search, full-text search, and knowledge graph GraphRAG on document processed from multiple data sources (filesystem, Alfresco, CMIS, etc.). Built with LlamaIndex which provides abstractions for allowing multiple vector, search graph databases, LLMs to be supported. It has both a FastAPI backend with REST endpoints and a Model Context Protocol (MCP) server for MCP clients like Claude Desktop, etc. Also has simple Angular, React, and Vue UI clients (which use the REST APIs of the FastAPI backend) for using interacting with the system.
+
+**Deployment Flexibility**: Supports both standalone and Docker deployment modes. Docker infrastructure provides modular database selection via docker-compose includes - vector, graph, and search databases can be included or excluded with a single comment. Choose between hybrid deployment (databases in Docker, backend and UIs standalone) or full containerization.
+
 
 - **Hybrid Search**: Combines vector embeddings, BM25 full-text search, and graph traversal for comprehensive document retrieval
 - **Knowledge Graph GraphRAG**: Extracts entities and relationships from documents to create graphs in graph databases for graph-based reasoning  
@@ -41,6 +44,12 @@ A configurable hybrid search system that combines vector similarity search, full
 - **Vue Frontend**: Vue 3 Composition API with Vuetify and TypeScript
 - **Unified Features**: All clients support async processing, progress tracking, and cancellation
 
+### Docker Infrastructure (`/docker`)
+- **Modular Database Selection**: Include/exclude vector, graph, and search databases with single-line comments
+- **Flexible Deployment**: Hybrid mode (databases in Docker, apps standalone) or full containerization
+- **NGINX Reverse Proxy**: Unified access to all services with proper routing
+- **Database Dashboards**: Integrated web interfaces for Kibana (Elasticsearch), OpenSearch Dashboards, Neo4j Browser, and Kuzu Explorer
+
 ## Supported File Formats
 
 The system processes **15+ document formats** through intelligent routing between Docling (advanced processing) and direct text handling:
@@ -65,24 +74,42 @@ The system processes **15+ document formats** through intelligent routing betwee
 - **Format Detection**: Automatic routing based on file extension and content analysis
 - **Fallback Handling**: Graceful degradation for unsupported formats
 
-## Database & LLM Configuration
+## Vector, Graph, and Search Databases & LLM Configuration
+
+### ⚠️ Vector Dimension Compatibility
+
+**CRITICAL**: When switching between different embedding models (e.g., OpenAI ↔ Ollama), you **MUST delete existing vector indexes** due to dimension incompatibility:
+
+- **OpenAI**: 1536 dimensions (text-embedding-3-small) or 3072 dimensions (text-embedding-3-large)
+- **Ollama**: 1024 dimensions (mxbai-embed-large) or 768 dimensions (nomic-embed-text)
+- **Azure OpenAI**: Same as OpenAI (1536 or 3072 dimensions)
+
+**See [VECTOR-DIMENSIONS.md](VECTOR-DIMENSIONS.md) for detailed cleanup instructions for each database.**
 
 ### Vector Databases 
 Current configuration supports (via LlamaIndex abstractions, can be extended to cover others that LlamaIndex supports):
 - **Neo4j Vector**: Native vector storage in Neo4j with APOC support
+  - Dashboard: Neo4j Browser (http://localhost:7474) for Cypher queries and graph visualization
 - **Qdrant**: Dedicated vector database with advanced filtering
+  - Dashboard: Qdrant Web UI (http://localhost:6333/dashboard) for collection management
 - **Elasticsearch**: Full-text and vector search capabilities
+  - Dashboard: Kibana (http://localhost:5601) for index management and data visualization
 - **OpenSearch**: Open-source Elasticsearch alternative
+  - Dashboard: OpenSearch Dashboards (http://localhost:5601) for cluster and index management
 
 ### Graph Databases  
 Current configuration supports (via LlamaIndex abstractions, can be extended to cover others that LlamaIndex supports):
 - **Neo4j Property Graph**: Primary knowledge graph storage with Cypher querying
+  - Dashboard: Neo4j Browser (http://localhost:7474) for graph exploration and query execution
 - **Kuzu**: Embedded graph database built for query speed and scalability, optimized for handling complex analytical workloads on very large graph databases. Supports the property graph data model and the Cypher query language
+  - Dashboard: Kuzu Explorer (http://localhost:8002) for graph visualization and Cypher queries
 
-### Search Engines
-- **BM25 (Built-in)**: LlamaIndex native full-text search (no external dependencies)
-- **Elasticsearch**: Advanced search with analyzers and aggregations
-- **OpenSearch**: Open-source search with ML capabilities
+### Search Databases (Engines)
+- **BM25 (Built-in)**: Local file-based BM25 full-text search with TF-IDF ranking. Ideal for development, small datasets, or scenarios when don't need all the features and administration and monitoring support.
+- **Elasticsearch**: Enterprise search engine with vector similarity, BM25 text search, advanced analyzers, faceted search, and real-time analytics. Ideal for production workloads requiring sophisticated text processing and search relevance tuning
+  - Dashboard: Kibana (http://localhost:5601) for search analytics, index management, and query debugging
+- **OpenSearch**: AWS-led open-source fork of Elasticsearch with native vector search, hybrid scoring (vector + BM25), k-NN algorithms, and built-in machine learning features. Offers cost-effective alternative with strong community support and seamless hybrid search capabilities
+  - Dashboard: OpenSearch Dashboards (http://localhost:5601) for cluster monitoring and search pipeline management
 
 ### LLM Providers
 - **OpenAI**: GPT models with configurable endpoints
@@ -90,6 +117,14 @@ Current configuration supports (via LlamaIndex abstractions, can be extended to 
 - **Azure OpenAI**: Enterprise OpenAI integration
 - **Anthropic**: Claude models for complex reasoning
 - **Google Gemini**: Google's latest language models
+
+#### ⚠️ Kuzu + LLM Performance Recommendation
+**When using Kuzu as your graph database, strongly consider using OpenAI instead of Ollama** for significantly better performance:
+
+- **LlamaIndex Knowledge Graph Extraction for Kuzu**: Using OpenAI models are much faster at entity/relationship extraction. Work was done leveraging a vector database (qdrant to help)
+- **Build Performance**: Even larger Ollama models (gpt-oss:20b) are considerably slower than OpenAI for graph construction
+- **Small Document Impact**: Performance is a problem even with small documents
+- Also search is slower.
 
 ## MCP Tools for MCP Clients like Claude Desktop, etc.
 
@@ -129,11 +164,108 @@ The MCP server provides 9 specialized tools for document intelligence workflows:
 
 ## Setup
 
+### 🐳 Docker Deployment
+
+Docker deployment offers two main approaches:
+
+#### Option A: Databases in Docker, App Standalone (Hybrid)
+**Best for**: Development, filesystem data sources, external content management systems
+
+```bash
+# Deploy only databases you need
+docker-compose -f docker/docker-compose.yaml up -d
+
+# Comment out services you don't need in docker-compose.yaml:
+# - includes/neo4j.yaml          # Comment out if using your own Neo4j
+# - includes/kuzu.yaml           # Comment out if not using Kuzu
+# - includes/qdrant.yaml         # Comment out if using Neo4j, Elasticsearch, or OpenSearch for vectors  
+# - includes/elasticsearch.yaml  # Comment out if not using Elasticsearch
+# - includes/elasticsearch-dev.yaml  # Comment out if not using Elasticsearch
+# - includes/kibana.yaml         # Comment out if not using Elasticsearch
+# - includes/opensearch.yaml     # Comment out if not using
+# - includes/alfresco.yaml       # Comment out if you want to use your own Alfresco install
+# - includes/app-stack.yaml      # Remove comment if you want backend and UI in Docker
+# - includes/proxy.yaml          # Remove comment if you want backend and UI in Docker
+#   (Note: app-stack.yaml has env config in it to customize for vector, graph, search, LLM using)
+
+# Run backend and UI clients outside Docker
+cd flexible-graphrag
+uv run start.py
+```
+
+**Use cases:**
+- ✅ **Filesystem data sources**: Direct access to local files
+- ✅ **External CMIS/Alfresco**: Connect to existing content management systems
+- ✅ **Development**: Easy debugging and hot-reloading
+- ✅ **Mixed environments**: Databases in containers, apps on host
+
+#### Option B: Full Stack in Docker (Complete)
+**Best for**: Production deployment, isolated environments, containerized content sources
+
+```bash
+# Deploy everything including backend and UIs
+docker-compose -f docker/docker-compose.yaml up -d
+```
+
+**Features:**
+- ✅ All databases pre-configured (Neo4j, Kuzu, Qdrant, Elasticsearch, OpenSearch, Alfresco)
+- ✅ Backend + 3 UI clients (Angular, React, Vue) in containers
+- ✅ NGINX reverse proxy with unified URLs
+- ✅ Persistent data volumes
+- ✅ Internal container networking
+
+**Service URLs after startup:**
+- **Angular UI**: http://localhost:8070/ui/angular/
+- **React UI**: http://localhost:8070/ui/react/  
+- **Vue UI**: http://localhost:8070/ui/vue/
+- **Backend API**: http://localhost:8070/api/
+- **Neo4j Browser**: http://localhost:7474/
+- **Kuzu Explorer**: http://localhost:8002/
+
+**Data Source Workflow:**
+- ❌ **Filesystem**: Cannot access host machine files when running in Docker containers
+- ✅ **CMIS/Alfresco**: Upload files to Alfresco repository (running in Docker), then ingest from there
+  1. Access Alfresco at http://localhost:8080/alfresco (admin/admin)
+  2. Upload documents to `/Shared/GraphRAG` folder
+  3. In a Flexible GraphRAG UI (Angular, React, or Vue):
+     - Choose CMIS or Alfresco data source
+     - Enter file path: `/Shared/GraphRAG/cmispress.txt` (example)
+     - Click "Ingest Documents"
+  4. When ingestion completes, use Hybrid Search and/or Q&A queries
+
+#### Configuration
+
+1. **Modular deployment**: Comment out services you don't need in `docker/docker-compose.yaml`
+
+2. **Environment configuration** (for app-stack deployment): 
+   - Environment variables are configured directly in `docker/includes/app-stack.yaml`
+   - Database connections use `host.docker.internal` for container-to-container communication
+   - Default configuration includes OpenAI/Ollama LLM settings and database connections
+
+See [docker/README.md](./docker/README.md) for detailed Docker configuration.
+
+### 🔧 Local Development Setup
+
+#### Environment Configuration
+
+**Create environment file** (cross-platform):
+```bash
+# Linux/macOS
+cp flexible-graphrag/env-sample.txt flexible-graphrag/.env
+
+# Windows Command Prompt  
+copy flexible-graphrag\env-sample.txt flexible-graphrag\.env
+
+# Windows PowerShell
+Copy-Item flexible-graphrag\env-sample.txt flexible-graphrag\.env
+```
+Edit `.env` with your database credentials and API keys.
+
 ### Python Backend Setup
 
 1. Navigate to the backend directory:
    ```bash
-   cd flexible-graphrag
+   cd project-directory/flexible-graphrag
    ```
 
 2. Create a virtual environment using UV and activate it:
@@ -152,34 +284,27 @@ The MCP server provides 9 specialized tools for document intelligence workflows:
    uv pip install -r requirements.txt
    ```
 
-4. Create a `.env` file in the flexible-graphrag directory with your configuration:
+4. Create a `.env` file by copying the sample and customizing:
+   ```bash
+   # Copy sample environment file (use appropriate command for your platform)
+   cp env-sample.txt .env  # Linux/macOS
+   copy env-sample.txt .env  # Windows
    ```
-   CMIS_URL=http://your-cmis-server/alfresco/api/-default-/public/cmis/versions/1.1/atom
-   CMIS_USERNAME=your-username
-   CMIS_PASSWORD=your-password
-   NEO4J_URI=neo4j://localhost:7689
-   NEO4J_USER=neo4j
-   NEO4J_PASSWORD=your-neo4j-password
-   USE_OPENAI=true  # Set to false to use Ollama
-   OPENAI_API_KEY=your-openai-api-key  # If using OpenAI
-   OPENAI_MODEL=gpt-4.1-mini  # If using OpenAI set OpenAI model
-   LAMA_MODEL=llama3.1:8b  # If using Ollama set Ollama model
-   ```
+   
+   Edit `.env` with your specific configuration. See [docs/ENVIRONMENT-CONFIGURATION.md](docs/ENVIRONMENT-CONFIGURATION.md) for detailed setup guide.
 
 ### Frontend Setup
 
-**Important**: Development vs Production serving:
+**Production Mode** (backend does not serve frontend):
+- **Backend API**: http://localhost:8000 (FastAPI server only)
+- **Frontend deployment**: Separate deployment (nginx, Apache, static hosting, etc.)
+- Both standalone and Docker frontends point to backend at localhost:8000
 
 **Development Mode** (frontend and backend run separately):
 - **Backend API**: http://localhost:8000 (FastAPI server only)
 - **Angular Dev**: http://localhost:4200 (ng serve)
-- **React Dev**: http://localhost:5173 (npm run dev)
+- **React Dev**: http://localhost:5173 (npm run dev)  
 - **Vue Dev**: http://localhost:5174 (npm run dev)
-
-**Production Mode** (backend serves built frontend):
-- **Everything**: http://localhost:8000 (FastAPI serves API + built frontend)
-- Requires building frontend first: `ng build`, `npm run build`, etc.
-- Backend automatically detects and serves the built frontend
 
 Choose one of the following frontend options to work with:
 
@@ -221,6 +346,8 @@ The React frontend will be available at `http://localhost:5174`.
 
 The Angular frontend will be available at `http://localhost:4200`.
 
+**Note**: If `ng build` gives budget errors, use `npm start` for development instead.
+
 #### Vue Frontend
 
 1. Navigate to the Vue frontend directory:
@@ -257,13 +384,13 @@ The backend will be available at `http://localhost:8000`.
 
 Follow the instructions in the Frontend Setup section for your chosen frontend framework.
 
-### Production Build and Deployment
+### Frontend Deployment
 
-For production, build the frontend and let the backend serve it:
+**Note**: Docker deployment not recommended currently due to filesystem data source limitations.
 
 #### Build Frontend
 ```bash
-# Angular
+# Angular (may have budget warnings - safe to ignore for development)
 cd flexible-graphrag-ui/frontend-angular
 ng build
 
@@ -276,31 +403,31 @@ cd flexible-graphrag-ui/frontend-vue
 npm run build
 ```
 
+**Angular Build Notes**:
+- Budget warnings are common in Angular and usually safe to ignore for development
+- For production, consider optimizing bundle sizes or adjusting budget limits in `angular.json`
+- Development mode: Use `npm start` to avoid build issues
+
 #### Start Production Server
 ```bash
 cd flexible-graphrag
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-The backend will:
-1. Check for all built frontends and serve each at its own route
-2. Serve all available frontends simultaneously at different URLs
-3. Serve API endpoints at the same port under `/api/*`
-4. Provide a root endpoint listing all available interfaces
+The backend provides:
+- API endpoints under `/api/*`
+- Independent operation focused on data processing and search
+- Clean separation from frontend serving concerns
 
-**Production URLs (all on port 8000)**:
-- **Root Info**: http://localhost:8000/ (lists all available frontends and API)
-- **Angular UI**: http://localhost:8000/angular/ (if built)
-- **React UI**: http://localhost:8000/react/ (if built)
-- **Vue UI**: http://localhost:8000/vue/ (if built)
-- **API Endpoints**: http://localhost:8000/api/* (ingest, search, query, status, etc.)
-- **API Info**: http://localhost:8000/api/info (lists all endpoints and frontends)
+**Backend API Endpoints**:
+- **API Base**: http://localhost:8000/api/
+- **API Endpoints**: `/api/ingest`, `/api/search`, `/api/query`, `/api/status`, etc.
 - **Health Check**: http://localhost:8000/api/health
 
-**Build any or all frontends**:
-- You can build one, two, or all three frontends
-- Each built frontend will be available at its own route
-- Users can choose which UI they prefer to use
+**Frontend Deployment**:
+- **Manual Deployment**: Deploy frontends independently using your preferred method (nginx, Apache, static hosting, etc.)
+- **Frontend Configuration**: Both standalone and Docker frontends point to backend at `http://localhost:8000/api/`
+- Each frontend can be built and deployed separately based on your needs
 
 ## Full-Stack Debugging
 
@@ -430,6 +557,26 @@ Both modes use the same underlying retrieval but process results differently:
     - `vite.config.ts`: Vite configuration
     - `tsconfig.json`: TypeScript configuration
     - `package.json`: Node.js dependencies and scripts
+
+- `/docker`: Docker infrastructure
+  - `docker-compose.yaml`: Main compose file with modular includes
+  - `/includes`: Modular database and service configurations
+  - `/nginx`: Reverse proxy configuration
+  - `README.md`: Docker deployment documentation
+
+- `/docs`: Documentation
+  - `ENVIRONMENT-CONFIGURATION.md`: Environment setup guide
+  - `VECTOR-DIMENSIONS.md`: Vector database cleanup instructions
+  - `SCHEMA-EXAMPLES.md`: Knowledge graph schema examples
+
+- `/scripts`: Utility scripts
+  - `create_opensearch_pipeline.py`: OpenSearch hybrid search pipeline setup
+  - `setup-opensearch-pipeline.sh/.bat`: Cross-platform pipeline creation
+
+- `/tests`: Test suite
+  - `test_bm25_*.py`: BM25 configuration and integration tests
+  - `conftest.py`: Test configuration and fixtures
+  - `run_tests.py`: Test runner
 
 ## License
 

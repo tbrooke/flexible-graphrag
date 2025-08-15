@@ -56,9 +56,10 @@ This project supports a comprehensive range of document formats through intellig
                       │  Storage Backends │
                       ├───────────────────┤
                       │ • Neo4j (Vector+Graph)
+                      │ • Kuzu (Graph)
                       │ • Qdrant (Vector)
-                      │ • Elasticsearch
-                      │ • OpenSearch
+                      │ • Elasticsearch (Vector+Text)
+                      │ • OpenSearch (Vector+Text)
                       └───────────────────┘
 ```
 
@@ -118,6 +119,15 @@ The system is highly configurable through environment variables:
 
 ### LLM Providers
 - `LLM_PROVIDER`: `openai`, `ollama`, `gemini`, `azure_openai`, `anthropic`
+
+### ⚠️ Vector Dimension Compatibility
+**CRITICAL**: When switching between different embedding models, you **MUST delete existing vector indexes** due to dimension incompatibility:
+
+- **OpenAI**: 1536 dimensions (default) or 3072 dimensions (large models)
+- **Ollama**: 1024 dimensions (default) or 768/384 dimensions (other models)
+- **Azure OpenAI**: Same as OpenAI dimensions
+
+**See [../VECTOR-DIMENSIONS.md](../VECTOR-DIMENSIONS.md) for detailed cleanup instructions.**
 
 See `env-sample.txt` for complete configuration options.
 

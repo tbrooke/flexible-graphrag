@@ -64,6 +64,15 @@
               </v-card-text>
             </v-card>
           </div>
+          <!-- Show message when no results found after a search -->
+          <v-alert
+            v-else-if="hasSearched && !isQuerying"
+            type="info"
+            class="mt-4"
+            variant="tonal"
+          >
+            No results found for "{{ lastSearchQuery }}". Try different search terms.
+          </v-alert>
         </v-window-item>
 
         <!-- Q&A Answer Tab -->
@@ -118,12 +127,16 @@ const isQuerying = ref(false);
 const error = ref('');
 const searchResults = ref<any[]>([]);
 const qaAnswer = ref('');
+const hasSearched = ref(false);
+const lastSearchQuery = ref('');
 
 // Clear results when switching tabs
 watch(activeTab, () => {
   error.value = '';
   searchResults.value = [];
   qaAnswer.value = '';
+  hasSearched.value = false;
+  lastSearchQuery.value = '';
 });
 
 const handleQuery = async (): Promise<void> => {
@@ -134,6 +147,7 @@ const handleQuery = async (): Promise<void> => {
     error.value = '';
     searchResults.value = [];
     qaAnswer.value = '';
+    lastSearchQuery.value = question.value;
     
     console.log('Sending query request:', {
       query: question.value,
@@ -160,12 +174,14 @@ const handleQuery = async (): Promise<void> => {
     console.log('Query response received:', response.data);
     
     if (response.data.success) {
+      hasSearched.value = true;
       if (activeTab.value === 'search' && response.data.results) {
         searchResults.value = response.data.results;
       } else if (activeTab.value === 'qa' && response.data.answer) {
         qaAnswer.value = response.data.answer;
       }
     } else {
+      hasSearched.value = true;
       error.value = response.data.error || 'Error executing query';
     }
   } catch (err: any) {

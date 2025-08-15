@@ -316,7 +316,10 @@ class AlfrescoSource:
             self.raw_client = self.core_client.client if hasattr(self.core_client, 'client') else self.core_client
             
             # Initialize CMIS specifically for getObjectByPath operations
-            cmis_url = f"{base_url}/api/-default-/public/cmis/versions/1.1/atom"
+            # Use CMIS_URL environment variable if available, otherwise construct from base_url
+            import os
+            cmis_url = os.getenv("CMIS_URL", f"{base_url}/api/-default-/public/cmis/versions/1.1/atom")
+            logger.info(f"AlfrescoSource using CMIS URL: {cmis_url}")
             self.cmis_client = CmisClient(cmis_url, username, password)
             self.repo = self.cmis_client.defaultRepository
             

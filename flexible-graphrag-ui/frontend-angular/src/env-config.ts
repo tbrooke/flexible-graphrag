@@ -6,6 +6,8 @@
 // Define the environment interface
 interface Environment {
   DEFAULT_FOLDER_PATH: string;
+  CMIS_BASE_URL?: string;
+  ALFRESCO_BASE_URL?: string;
 }
 
 // Declare the __env property on the window object
@@ -17,8 +19,10 @@ declare global {
 
 // Initialize the environment
 window.__env = window.__env || {
-  // Default value that will be overridden by the server
-  DEFAULT_FOLDER_PATH: '/Shared/GraphRAG'
+  // Default values that will be overridden by the server
+  DEFAULT_FOLDER_PATH: '/Shared/GraphRAG',
+  CMIS_BASE_URL: 'http://localhost:8080',
+  ALFRESCO_BASE_URL: 'http://localhost:8080'
 };
 
 // The server will inject actual values from .env here

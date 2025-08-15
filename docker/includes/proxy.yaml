@@ -1,0 +1,21 @@
+# NGINX Reverse Proxy
+services:
+  nginx:
+    image: nginx:stable-alpine
+    container_name: flexible-graphrag-proxy
+    ports:
+      - "8070:80"
+      - "8444:443"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /dev/null:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - flexible-graphrag-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Self-contained proxy service

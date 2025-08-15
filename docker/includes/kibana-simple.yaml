@@ -1,0 +1,20 @@
+# Kibana Dashboard for Elasticsearch (Simple Version without Security)
+services:
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.0
+    container_name: flexible-graphrag-kibana
+    volumes:
+      - ../config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - flexible-graphrag

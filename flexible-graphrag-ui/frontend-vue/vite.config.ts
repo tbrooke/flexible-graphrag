@@ -2,9 +2,11 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
-// Hardcoded environment variables (previously in .env)
+// Standalone development configuration
 const API_BASE_URL = '/api'
 const NODE_ENV = 'development'
+const CMIS_BASE_URL = process.env.VITE_CMIS_BASE_URL || 'http://localhost:8080'  // Default for standalone
+const ALFRESCO_BASE_URL = process.env.VITE_ALFRESCO_BASE_URL || 'http://localhost:8080'  // Default for standalone
 
 export default defineConfig({
   plugins: [vue()],
@@ -39,6 +41,8 @@ export default defineConfig({
   // Define environment variables that will be available in the Vue app
   define: {
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(API_BASE_URL),
+    'import.meta.env.VITE_CMIS_BASE_URL': JSON.stringify(CMIS_BASE_URL),
+    'import.meta.env.VITE_ALFRESCO_BASE_URL': JSON.stringify(ALFRESCO_BASE_URL),
     'process.env.NODE_ENV': JSON.stringify(NODE_ENV)
   }
 })

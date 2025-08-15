@@ -2,56 +2,113 @@
 
 # Data Source (filesystem, cmis, alfresco)
 DATA_SOURCE=filesystem
-SOURCE_PATHS=["./sample_docs"]
+SOURCE_PATHS=["./sample-docs/cmispress.txt"]
 
 # Sample Text for Testing (optional - overrides default Dune text)
 # SAMPLE_TEXT="Luke Skywalker is a Jedi Knight from Tatooine. His father is Darth Vader, formerly known as Anakin Skywalker."
 
-# Windows Path Examples:
-# Relative paths (recommended):
-# SOURCE_PATHS=["./sample_docs", "./data/reports"]
-#
-# Windows "Copy as path" format (with spaces - paste directly!):
-# SOURCE_PATHS=["C:\1 sample files\cmispress.pdf"]
-# SOURCE_PATHS=["C:\Users\sreiner\Documents\test data", "D:\My Files\reports"]
-#
-# Multiple files and folders:
-# SOURCE_PATHS=["C:\temp\file.pdf", "C:\Documents\folder", "./local_docs"]
-#
-# Absolute Windows paths (use double backslashes for manual typing):
-# SOURCE_PATHS=["C:\\Users\\username\\Documents\\sample_docs"]
-# SOURCE_PATHS=["D:\\Projects\\flexible-graphrag\\test_data"]
-#
-# Forward slashes also work on Windows:
-# SOURCE_PATHS=["C:/Users/username/Documents/sample_docs"]
-# SOURCE_PATHS=["C:/temp/test_files"]
-#
-# UNC network paths:
-# SOURCE_PATHS=["\\\\server\\share\\folder"]
-# SOURCE_PATHS=["//server/share/folder"]
+# Source Path Examples:
+# Windows single file: SOURCE_PATHS=["C:\Documents\report.pdf"]
+# Windows multiple files: SOURCE_PATHS=["C:\file1.pdf", "D:\folder\file2.docx"] 
+# Windows whole directory: SOURCE_PATHS=["C:\Documents\reports"]  # Note: processes ALL files
+# macOS single file: SOURCE_PATHS=["/Users/username/Documents/report.pdf"]
+# Linux single file: SOURCE_PATHS=["/home/username/documents/report.pdf"]
+# See docs/SOURCE-PATH-EXAMPLES.md for more detailed examples
+# Note: UI clients use different env vars (PROCESS_FOLDER_PATH, VITE_PROCESS_FOLDER_PATH)
 
-# Database Configuration
-VECTOR_DB=neo4j
+# ====================================================================
+# 1. GRAPH DATABASE CONFIGURATION
+# ====================================================================
+
 GRAPH_DB=neo4j
+#GRAPH_DB=kuzu
+#GRAPH_DB=none
+
+# Enable knowledge graph extraction 
+#ENABLE_KNOWLEDGE_GRAPH=false
+ENABLE_KNOWLEDGE_GRAPH=true
+
+# Graph Database Connection Configurations:
+# Neo4j
+GRAPH_DB_CONFIG={"url": "bolt://localhost:7687", "username": "neo4j", "password": "password"}
+
+# Kuzu  
+#GRAPH_DB_CONFIG={"db_path": "./kuzu_db"}
+
+# ====================================================================
+# SCHEMA CONFIGURATION - Controls entity and relationship extraction
+# ====================================================================
+
+# Schema set to default uses SAMPLE_SCHEMA in config.py
+# "entities": Literal["PERSON", "ORGANIZATION", "LOCATION", "TECHNOLOGY", "PROJECT", "DOCUMENT"],
+# "relations": Literal["WORKS_FOR", "LOCATED_IN", "USES", "COLLABORATES_WITH", "DEVELOPS", "MENTIONS"],
+SCHEMA_NAME=default
+#SCHEMA_NAME=none
+
+# Custom schema example (more examples in docs/SCHEMA-EXAMPLES.md):
+# SCHEMAS=[{"name": "business", "schema": {"entities": ["COMPANY", "PERSON"], "relations": ["WORKS_FOR"]}}]
+
+# ====================================================================
+# 2. VECTOR DATABASE CONFIGURATION  
+# ====================================================================
+
+VECTOR_DB=neo4j
+#VECTOR_DB=qdrant
+#VECTOR_DB=elasticsearch
+#VECTOR_DB=opensearch
+#VECTOR_DB=none
+
+# Vector Database Connection Configurations:
+# Qdrant
+#VECTOR_DB_CONFIG={"host": "localhost", "port": 6333, "collection_name": "hybrid_search_vector", "https": false}
+
+# Elasticsearch
+#VECTOR_DB_CONFIG={"url": "http://localhost:9200", "index_name": "hybrid_search_vector"}
+
+# OpenSearch Configuration (Vector Store) - Dense vector search
+#VECTOR_DB_CONFIG={"url": "http://localhost:9201", "index_name": "hybrid_search_vector"}
+
+# Neo4j VECTOR database configuration (separate from graph)
+VECTOR_DB_CONFIG={"url": "bolt://localhost:7687", "username": "neo4j", "password": "password", "index_name": "hybrid_search_vector", "database": "neo4j"}
+
+
+# ====================================================================
+# 3. SEARCH DATABASE CONFIGURATION
+# ====================================================================
+
+#SEARCH_DB=bm25
 SEARCH_DB=elasticsearch
+#SEARCH_DB=opensearch
+#SEARCH_DB=none
 
-# Neo4j Configuration
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=password
+# Search Database Connection Configurations:
+# Elasticsearch
+SEARCH_DB_CONFIG={"url": "http://localhost:9200", "index_name": "hybrid_search_fulltext"}
 
-# LLM Configuration
+# OpenSearch Configuration (Search Store) - BM25 fulltext search
+#SEARCH_DB_CONFIG={"url": "http://localhost:9201", "index_name": "hybrid_search_fulltext"}
+
+# ====================================================================
+# 4. LLM CONFIGURATION
+# ====================================================================
+
 LLM_PROVIDER=openai
 USE_OPENAI=true
+#LLM_PROVIDER=ollama
+#USE_OPENAI=false
 
-# OpenAI Configuration
+# OpenAI Configuration (if using OpenAI)
 OPENAI_API_KEY=your-openai-api-key-here
 OPENAI_MODEL=gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small  # 1536 dimensions, recommended
 # OPENAI_TIMEOUT=120.0  # LLM request timeout in seconds (default: 2 minutes)
 
 # Ollama Configuration (if using Ollama)
-OLLAMA_MODEL=llama3.1:8b
-OLLAMA_BASE_URL=http://localhost:11434
+#OLLAMA_MODEL=llama3.1:8b
+#OLLAMA_MODEL=llama3.2:latest
+#OLLAMA_MODEL=gpt-oss:20b
+#EMBEDDING_MODEL=mxbai-embed-large
+#OLLAMA_BASE_URL=http://localhost:11434
 # OLLAMA_TIMEOUT=300.0  # LLM request timeout in seconds (default: 5 minutes - higher for local processing)
 
 # Azure OpenAI Configuration (if using Azure)
@@ -63,6 +120,10 @@ OLLAMA_BASE_URL=http://localhost:11434
 # Gemini Configuration (if using Google)
 # GEMINI_TIMEOUT=120.0  # LLM request timeout in seconds
 
+# ====================================================================
+# 5. CONTENT SOURCES CONFIGURATION
+# ====================================================================
+
 # CMIS Configuration (if using CMIS)
 CMIS_URL=http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom
 CMIS_USERNAME=admin
@@ -73,80 +134,48 @@ ALFRESCO_URL=http://localhost:8080/alfresco
 ALFRESCO_USERNAME=admin
 ALFRESCO_PASSWORD=admin
 
-# Optional: Elasticsearch Configuration
+# ====================================================================
+# DATABASE CONNECTION DETAILS (Individual Configs)
+# ====================================================================
+
+# Neo4j Configuration (for both vector and graph storage)
+# Browser URL: http://localhost:7474/browser (for database management and queries)
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password
+# NEO4J_DATABASE=neo4j  # Optional: specify database name (default: neo4j)
+
+# Neo4j AuraDB (cloud) example:
+# NEO4J_URI=neo4j+s://<dbid>.databases.neo4j.io
+# NEO4J_USER=neo4j
+# NEO4J_PASSWORD=<aura-generated-password>
+# Console URL: https://console.neo4j.io
+
+# Elasticsearch Configuration
 ELASTICSEARCH_URL=http://localhost:9200
 ELASTICSEARCH_USERNAME=
 ELASTICSEARCH_PASSWORD=
 
-# Optional: Qdrant Configuration
+# Qdrant Configuration
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 QDRANT_API_KEY=
+# QDRANT_COLLECTION=hybrid_search  # Optional: collection name
+# QDRANT_HTTPS=false  # Use HTTPS for remote Qdrant instances
+
+# OpenSearch Configuration
+OPENSEARCH_URL=http://localhost:9201
+OPENSEARCH_USERNAME=
+OPENSEARCH_PASSWORD=
 
 # Processing Configuration
 CHUNK_SIZE=1024
 CHUNK_OVERLAP=128
 MAX_TRIPLETS_PER_CHUNK=10
 
-# ====================================================================
-# TIMEOUT CONFIGURATIONS - Multiple Different Types
-# ====================================================================
-
-# 1. LLM REQUEST TIMEOUTS
-# Controls how long to wait for LLM API responses (OpenAI, Ollama, etc.)
-# Used during: Knowledge graph extraction, query answering, embeddings
-# OLLAMA_TIMEOUT=60.0  # For Ollama LLM requests (uncomment if using Ollama)
-
-# 2. DOCUMENT PROCESSING TIMEOUTS  
-# Controls Docling document conversion timeouts (NEW - configurable since this update)
-# Used during: PDF/DOCX/etc. conversion to text before LLM processing
-
-# DOCLING_TIMEOUT: Maximum time for processing a single document with Docling
-# - Small files (< 1MB): Usually 5-30 seconds
-# - Large PDFs (10MB+): May take 2-5 minutes 
-# - Complex documents: Up to 5-10 minutes
-# - Set higher for large documents or slower hardware
-DOCLING_TIMEOUT=300  # Default: 5 minutes (300 seconds)
-
-# DOCLING_CANCEL_CHECK_INTERVAL: How often to check for user cancellation during Docling
-# - Lower values (0.1-0.5s): More responsive cancellation, slightly higher CPU
-# - Higher values (1.0-2.0s): Less responsive but lower overhead  
-# - This is NEW - enables cancelling during single file processing
-DOCLING_CANCEL_CHECK_INTERVAL=0.5  # Default: 0.5 seconds
-
-# 3. KNOWLEDGE GRAPH EXTRACTION TIMEOUTS
-# Controls the lengthy process of extracting entities and relationships
-# Used during: Building knowledge graph from processed text chunks
-
-# KG_EXTRACTION_TIMEOUT: Maximum time for knowledge graph extraction per document
-# - Small documents (< 50 pages): Usually 5-15 minutes
-# - Large documents (100+ pages): May take 30-60+ minutes
-# - Complex technical documents: Up to 2+ hours
-# - Set higher for complex documents or slower hardware/LLMs
-KG_EXTRACTION_TIMEOUT=3600  # Default: 1 hour (3600 seconds)
-
-# KG_PROGRESS_REPORTING: Enable detailed progress during KG extraction
-# - Shows "Processing chunk X/Y" and entity/relationship counts
-# - Helps users understand why large documents take time
-KG_PROGRESS_REPORTING=true  # Default: enabled
-
-# KG_BATCH_SIZE: Number of chunks to process together during KG extraction
-# - Smaller batches (5-10): More frequent progress updates, better cancellation
-# - Larger batches (20-50): More efficient but less granular progress
-KG_BATCH_SIZE=10  # Default: 10 chunks per batch
-
-# KG_CANCEL_CHECK_INTERVAL: How often to check for cancellation during KG extraction
-# - Lower values (1.0-2.0s): More responsive but slightly higher overhead
-# - Higher values (5.0-10s): Less responsive but more efficient
-KG_CANCEL_CHECK_INTERVAL=2.0  # Default: 2 seconds
-
-# NOTE: These are DIFFERENT timeouts for DIFFERENT purposes:
-# - LLM timeouts: For single API calls to language models (1-5 minutes)
-# - Docling timeouts: For document conversion PDF → text (5-10 minutes) 
-# - KG extraction timeouts: For full knowledge graph building (30-60+ minutes)
-# - UI timeouts: Handled separately in frontend clients
-
-# SEQUENTIAL PROCESSING NOTE:
-# Files are processed sequentially (one after another) currently in the backend
-# and this is reflected in the UI feedback. Each file completes fully before
-# the next file begins processing.
+# Timeout configurations moved to docs/TIMEOUT-CONFIGURATIONS.md
+# Uncomment and adjust these if you need custom timeout values:
+# DOCLING_TIMEOUT=300
+# KG_EXTRACTION_TIMEOUT=3600  
+# OPENAI_TIMEOUT=120.0  # For OpenAI LLM requests
+# OLLAMA_TIMEOUT=300.0  # For Ollama LLM requests

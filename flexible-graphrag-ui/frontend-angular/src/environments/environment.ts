@@ -5,7 +5,9 @@
 export const environment = {
   production: false,
   apiUrl: '/api', // Base URL for API requests
-  defaultFolderPath: '/Shared/GraphRAG' // Default folder path for CMIS
+  defaultFolderPath: '/Shared/GraphRAG', // Default folder path for CMIS
+  cmisBaseUrl: 'http://localhost:8080', // Default for standalone development
+  alfrescoBaseUrl: 'http://localhost:8080' // Default for standalone development
 };
 
 /*

@@ -12,11 +12,19 @@ from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 import importlib.metadata
+import nest_asyncio
 from config import Settings, DataSourceType
 from backend import get_backend
 
 # Load environment variables
 load_dotenv()
+
+# Fix for Windows event loop issues with Ollama/LlamaIndex
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# Apply nest_asyncio to allow nested event loops (required for LlamaIndex in FastAPI)
+nest_asyncio.apply()
 
 # Configure logging with both file and console output
 log_filename = f'flexible-graphrag-api-{datetime.now().strftime("%Y%m%d-%H%M%S")}.log'
@@ -301,7 +309,8 @@ async def get_api_info():
             "query": "/api/query",
             "status": "/api/status",
             "test_sample": "/api/test-sample",
-            "python_info": "/api/python-info"
+            "python_info": "/api/python-info",
+            "graph": "/api/graph"
         },
         "frontends": {
             "angular": "/angular",
@@ -310,6 +319,75 @@ async def get_api_info():
         },
         "mcp_server": "Available as separate fastmcp-server.py"
     }
+
+@app.get("/api/graph")
+async def get_graph_data(limit: int = 50):
+    """Get graph data for visualization (nodes and relationships)"""
+    try:
+        # Check if system is initialized and has graph store
+        if not hasattr(backend_instance, '_system') or backend_instance._system is None:
+            return {"error": "System not initialized - please ingest documents first"}
+        
+        if not hasattr(backend_instance.system, 'graph_store') or backend_instance.system.graph_store is None:
+            return {"error": "Graph database not configured"}
+        
+        # Check if it's Kuzu or Neo4j
+        graph_store = backend_instance.system.graph_store
+        
+        # Detect database type
+        graph_store_type = type(graph_store).__name__
+        
+        if "Kuzu" in graph_store_type or hasattr(graph_store, '_kuzu_db') or hasattr(graph_store, '_db'):
+            # Try to get Kuzu database connection
+            kuzu_db = None
+            if hasattr(graph_store, 'db'):
+                kuzu_db = graph_store.db
+            elif hasattr(graph_store, '_kuzu_db'):
+                kuzu_db = graph_store._kuzu_db
+            elif hasattr(graph_store, '_db'):
+                kuzu_db = graph_store._db
+            elif hasattr(graph_store, 'client') and hasattr(graph_store.client, '_db'):
+                kuzu_db = graph_store.client._db
+            
+            if kuzu_db is None:
+                return {"error": f"Kuzu database not accessible in {graph_store_type}", "database": "kuzu"}
+            
+            try:
+                # Query Kuzu database directly
+                import kuzu
+                conn = kuzu.Connection(kuzu_db)
+                
+                # Absolute simplest query - just check tables
+                try:
+                    # Use CALL statement to check database structure
+                    result = conn.execute("CALL show_tables()")
+                    tables_df = result.get_as_df()
+                    tables = tables_df.to_dict('records') if not tables_df.empty else []
+                    
+                    return {
+                        "database": "kuzu",
+                        "store_type": graph_store_type,
+                        "status": "connected",
+                        "tables": tables,
+                        "message": "Kuzu database accessible - use Kuzu Explorer at http://localhost:8002 for visualization"
+                    }
+                except Exception as table_error:
+                    # Even simpler - just confirm connection works
+                    return {
+                        "database": "kuzu", 
+                        "store_type": graph_store_type,
+                        "status": "connected_basic",
+                        "message": "Kuzu database connected but queries may have issues. Use Kuzu Explorer at http://localhost:8002",
+                        "table_error": str(table_error)
+                    }
+            except Exception as e:
+                return {"error": f"Error querying Kuzu: {str(e)}", "database": "kuzu", "store_type": graph_store_type}
+                
+        else:  # Neo4j or other
+            return {"error": f"Graph visualization only implemented for Kuzu currently (detected: {graph_store_type})", "database": "other"}
+            
+    except Exception as e:
+        return {"error": f"Error fetching graph data: {str(e)}"}
 
 @app.get("/api/python-info")
 async def python_info():
@@ -391,50 +469,15 @@ async def python_info():
         "requirements": req_status
     }
 
-# Serve all built frontends at different routes
-frontends_served = []
-
-# Serve Angular frontend
-if os.path.exists("../flexible-graphrag-ui/frontend-angular/dist"):
-    app.mount("/angular", StaticFiles(directory="../flexible-graphrag-ui/frontend-angular/dist", html=True), name="angular-frontend")
-    frontends_served.append("Angular at /angular")
-
-# Serve React frontend  
-if os.path.exists("../flexible-graphrag-ui/frontend-react/build"):
-    app.mount("/react", StaticFiles(directory="../flexible-graphrag-ui/frontend-react/build", html=True), name="react-frontend")
-    frontends_served.append("React at /react")
-
-# Serve Vue frontend
-if os.path.exists("../flexible-graphrag-ui/frontend-vue/dist"):
-    app.mount("/vue", StaticFiles(directory="../flexible-graphrag-ui/frontend-vue/dist", html=True), name="vue-frontend")
-    frontends_served.append("Vue at /vue")
-
-# Default redirect to first available frontend
-if frontends_served:
-    logger.info(f"Serving frontends: {', '.join(frontends_served)}")
-    
-    @app.get("/")
-    async def root():
-        available_frontends = {}
-        if os.path.exists("../flexible-graphrag-ui/frontend-angular/dist"):
-            available_frontends["angular"] = "/angular"
-        if os.path.exists("../flexible-graphrag-ui/frontend-react/build"):
-            available_frontends["react"] = "/react"
-        if os.path.exists("../flexible-graphrag-ui/frontend-vue/dist"):
-            available_frontends["vue"] = "/vue"
-            
-        return {
-            "message": "Flexible GraphRAG API", 
-            "frontends": available_frontends,
-            "api": "/api",
-            "info": "/api/info"
-        }
-else:
-    logger.warning("No frontend build directories found. API will be available but no UI will be served.")
-    
-    @app.get("/")
-    async def root():
-        return {"message": "Flexible GraphRAG API", "api": "/api", "note": "No frontends built"}
+# Backend API only - no frontend serving
+@app.get("/")
+async def root():
+    return {
+        "message": "Flexible GraphRAG API", 
+        "api": "/api",
+        "info": "/api/info",
+        "note": "Backend API only - use separate dev servers for UIs"
+    }
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

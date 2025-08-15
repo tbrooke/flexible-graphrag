@@ -2,6 +2,132 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-15] - Frontend Environment Variables & Vector Database Validation
+
+### Fixed
+- **Frontend Environment Variable Issues**
+  - Vue frontend template compilation errors with `import.meta.env` expressions
+  - React JSX environment variable resolution using computed placeholders  
+  - Angular production environment forcing Docker URLs for standalone deployments
+  - TypeScript compilation errors for window environment declarations
+
+### Enhanced
+- **Flexible Environment Configuration**
+  - Vue: Computed properties with fallback defaults for environment variables
+  - React: useMemo hooks for optimized environment resolution
+  - Angular: Runtime environment service supporting both standalone and Docker modes
+  - Production builds no longer require Docker infrastructure
+
+### Validated
+- **Complete Vector Database Support**
+  - Qdrant: Dedicated vector store with external container configuration
+  - Elasticsearch: Dual-purpose vector and fulltext search with separate indexes
+  - Neo4j: Vector database support with separate VECTOR_DB_CONFIG requirements
+  - OpenSearch: Hybrid search with single index and pipeline-based score fusion
+  - BM25: Local filesystem storage without external SEARCH_DB_CONFIG
+
+### Documentation
+- Updated Neo4j vector index cleanup commands (`hybrid_search_vector` vs `vector`)
+- Clarified BM25 configuration requirements and local storage approach
+- Simplified Neo4j cleanup instructions using `SHOW INDEXES` commands
+
+## [2025-08-14] - Environment Configuration & Documentation
+
+### Added
+- **Comprehensive Environment Configuration System**
+  - Complete `docs/ENVIRONMENT-CONFIGURATION.md` with 5-section structure guide
+  - Clean separation of schema, database, and source configurations  
+  - Database switching patterns and configuration best practices
+  - Missing Kuzu configuration with proper JSON format examples
+
+### Enhanced
+- **Environment File Organization**
+  - Moved schema configuration to dedicated section in `env-sample.txt`
+  - Fixed Neo4j default URI from incorrect port 7689 to standard 7687
+  - Added proper DB_CONFIG examples with JSON format for all database types
+  - Organized into logical sections for easy database switching
+
+### Documentation
+- Created supporting documentation: `SOURCE-PATH-EXAMPLES.md`, `TIMEOUT-CONFIGURATIONS.md`
+- Updated `docs/SCHEMA-EXAMPLES.md` to focus purely on schema examples
+- Established clean separation of concerns with cross-referenced documentation
+- Maintained backward compatibility while improving organization
+
+## [2025-08-13] - Kuzu Integration & Docker Full-Stack
+
+### Added
+- **Complete Kuzu Graph Database Integration**
+  - Kuzu support as alternative to Neo4j using Approach 2 (separate vector stores)
+  - Dual schema system: KUZU_SCHEMA for Kuzu, SAMPLE_SCHEMA for Neo4j
+  - LLM provider awareness for embedding models (OpenAI/Ollama/Azure)
+  - Graph API endpoint `/api/graph` for programmatic access to Kuzu data
+
+- **Docker Infrastructure Overhaul**  
+  - Fixed all Docker networking issues with Node.js 24 updates
+  - NGINX proxy configuration with proper upstream routing
+  - Standardized port allocation resolving conflicts
+  - Frontend Docker configurations with internal networking support
+
+### Enhanced
+- **Database Architecture Flexibility**
+  - Clean separation: Kuzu for graphs, Qdrant for vectors, Elasticsearch for search
+  - Schema validation system with `has_structured_schema=False` for Kuzu
+  - Identical search performance across Neo4j and Kuzu backends
+  - Multiple visualization options: Kuzu Explorer, Neo4j Browser, API access
+
+## [2025-08-12] - Async Processing & Event Loop Resolution
+
+### Fixed
+- **Ollama Event Loop Issues**
+  - Comprehensive async approach with global `nest_asyncio.apply()`
+  - Consistent async methods: `aquery()`, `aretrieve()` for all LLM providers
+  - Windows event loop policy fixes with `WindowsSelectorEventLoopPolicy`
+  - Simplified architecture removing complex fallback mechanisms
+
+### Enhanced
+- **Unified Async Architecture**
+  - Applied async patterns to all LLM providers, not just Ollama
+  - LlamaIndex integration following library recommendations
+  - Removed thread isolation in favor of proper async handling
+
+## [2025-08-11] - OpenSearch Native Hybrid Search
+
+### Added
+- **OpenSearch Native Hybrid Search Implementation**
+  - Single retriever using `VectorStoreQueryMode.HYBRID` 
+  - Eliminated async connection conflicts from dual retrievers
+  - Native OpenSearch score fusion instead of manual combination
+  - Automated pipeline creation with `scripts/create_opensearch_pipeline.py`
+
+### Enhanced
+- **Search Architecture Improvements**
+  - Hybrid mode detection in factories.py for OpenSearch
+  - Fulltext-only mode using `VectorStoreQueryMode.TEXT_SEARCH`
+  - Re-enabled async support in QueryFusionRetriever
+  - Better relevance than manual fusion approaches
+
+## [2025-08-10] - Database Integration & Hybrid Search Testing
+
+### Added
+- **Comprehensive Hybrid Search System**
+  - Dual-index Elasticsearch hybrid search (vector + fulltext)
+  - Working configurations for Qdrant+Elasticsearch+Kibana combinations
+  - OpenSearch factory configuration with `OpensearchVectorClient`
+  - Pure RAG mode with `ENABLE_KNOWLEDGE_GRAPH=false`
+
+### Fixed
+- **BM25 Standalone Search Issues**
+  - Document storage overwriting preventing proper indexing
+  - Early exit logic incorrectly assuming BM25 required vector docstore
+  - Zero-relevance filtering to exclude irrelevant results
+  - Direct retriever usage for single-modality scenarios
+
+### Enhanced
+- **UI Client Improvements**
+  - Zero results feedback across all frontend clients (Vue, Angular, React)
+  - Accumulative document storage across multiple ingestions
+  - Professional "No results found" messages with search term display
+
 ## [2025-08-09] - MCP Server and Async Processing
 
 ### Added

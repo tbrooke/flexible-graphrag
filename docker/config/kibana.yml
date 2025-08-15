@@ -1,0 +1,10 @@
+# Kibana Configuration - Minimal and Compatible
+server.host: 0.0.0.0
+server.port: 5601
+server.name: "flexible-graphrag-kibana"
+
+# Elasticsearch configuration
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+# Disable security to match Elasticsearch dev setup
+xpack.security.enabled: false
