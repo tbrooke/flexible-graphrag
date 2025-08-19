@@ -11,7 +11,14 @@ export default defineConfig({
   server: {
     port: 3000,
     host: '0.0.0.0',
-    // No proxy needed - nginx handles API routing
+    // Add proxy for direct access (port 3000)
+    proxy: {
+      '/api': {
+        target: 'http://flexible-graphrag-backend:8000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   define: {
     'import.meta.env.VITE_CMIS_BASE_URL': JSON.stringify(CMIS_BASE_URL),

@@ -8,13 +8,23 @@ import uuid
 import asyncio
 import sys
 
-# Fix for Windows event loop issues with Ollama/LlamaIndex
+# Fix for async event loop issues with containers and LlamaIndex
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+else:
+    # Docker/Linux environments - use default policy but ensure proper loop handling
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 try:
     import nest_asyncio
     nest_asyncio.apply()
+    
+    # Ensure we have a proper event loop for Docker containers
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 except ImportError:
     pass
 from datetime import datetime
@@ -131,7 +141,7 @@ class FlexibleGraphRAGBackend:
     def _update_processing_status(self, processing_id: str, status: str, message: str, progress: int = 0, 
                                   current_file: str = None, current_phase: str = None, 
                                   files_completed: int = 0, total_files: int = 0,
-                                  estimated_time_remaining: str = None):
+                                  estimated_time_remaining: str = None, file_progress: List[Dict] = None):
         """Update processing status with dynamic timing information"""
         current_time = datetime.now()
         existing_status = PROCESSING_STATUS.get(processing_id, {})
@@ -181,6 +191,10 @@ class FlexibleGraphRAGBackend:
             else:
                 status_update["estimated_time_remaining"] = f"{estimated_remaining / 3600:.1f} hours"
         
+        # Add individual file progress tracking
+        if file_progress:
+            status_update["individual_files"] = file_progress
+        
         PROCESSING_STATUS[processing_id] = status_update
         if total_files > 0:
             logger.info(f"Processing {processing_id}: {status} - {message} ({files_completed + 1}/{total_files} files)")
@@ -215,6 +229,332 @@ class FlexibleGraphRAGBackend:
         """Check if processing has been cancelled"""
         return (processing_id in PROCESSING_STATUS and 
                 PROCESSING_STATUS[processing_id]["status"] == "cancelled")
+    
+    def _initialize_file_progress(self, processing_id: str, file_paths: List[str]) -> List[Dict]:
+        """Initialize per-file progress tracking"""
+        file_progress = []
+        for i, file_path in enumerate(file_paths):
+            filename = Path(file_path).name
+            file_progress.append({
+                "index": i,
+                "filename": filename,
+                "filepath": file_path,
+                "status": "pending",  # pending, processing, completed, failed
+                "progress": 0,
+                "phase": "waiting",  # waiting, docling, chunking, kg_extraction, indexing
+                "message": "Waiting to process...",
+                "started_at": None,
+                "completed_at": None,
+                "error": None
+            })
+        return file_progress
+    
+    def _update_file_progress(self, processing_id: str, file_index: int, status: str = None, 
+                             progress: int = None, phase: str = None, message: str = None, error: str = None):
+        """Update progress for a specific file"""
+        current_status = PROCESSING_STATUS.get(processing_id, {})
+        file_progress = current_status.get("individual_files", [])
+        
+        if file_index < len(file_progress):
+            file_info = file_progress[file_index]
+            current_time = datetime.now().isoformat()
+            
+            if status:
+                file_info["status"] = status
+                if status == "processing" and not file_info["started_at"]:
+                    file_info["started_at"] = current_time
+                elif status in ["completed", "failed"]:
+                    file_info["completed_at"] = current_time
+            
+            if progress is not None:
+                file_info["progress"] = progress
+            if phase:
+                file_info["phase"] = phase
+            if message:
+                file_info["message"] = message
+            if error:
+                file_info["error"] = error
+            
+            # Update the main status with the new file progress
+            completed_count = sum(1 for f in file_progress if f["status"] == "completed")
+            logger.info(f"File progress update: {file_info['filename']} -> {status} ({progress}%) - {completed_count}/{len(file_progress)} completed")
+            
+            self._update_processing_status(
+                processing_id,
+                current_status.get("status", "processing"),
+                current_status.get("message", "Processing files..."),
+                current_status.get("progress", 0),
+                current_file=file_info["filename"],
+                current_phase=phase,
+                files_completed=completed_count,
+                total_files=len(file_progress),
+                file_progress=file_progress
+            )
+    
+    async def _process_files_batch_with_progress(self, processing_id: str, file_paths: List[str]):
+        """Process files in batch with per-file progress simulation"""
+        try:
+            logger.info(f"Starting batch processing with per-file progress for {len(file_paths)} files")
+            
+            # Get current status to preserve file_progress
+            current_status = PROCESSING_STATUS.get(processing_id, {})
+            existing_file_progress = current_status.get("individual_files", [])
+            
+            # If no existing file progress, initialize it
+            if not existing_file_progress:
+                logger.warning(f"No existing file progress found for {processing_id}, initializing now")
+                existing_file_progress = self._initialize_file_progress(processing_id, file_paths)
+            
+            logger.info(f"Found {len(existing_file_progress)} files in progress tracking")
+            
+            # Mark all files as processing
+            for file_index in range(len(file_paths)):
+                self._update_file_progress(
+                    processing_id, file_index,
+                    status="processing",
+                    progress=0,
+                    phase="docling",
+                    message="Starting batch processing..."
+                )
+            
+            # Simulate progress updates during batch processing
+            async def progress_updater():
+                """Background task to simulate per-file progress during batch processing"""
+                phases = [
+                    ("docling", "Converting documents...", 20),
+                    ("chunking", "Splitting into chunks...", 40),
+                    ("kg_extraction", "Extracting knowledge graph...", 70),
+                    ("indexing", "Building indexes...", 90)
+                ]
+                
+                for phase_name, message, progress in phases:
+                    await asyncio.sleep(0.5)  # Wait between phases
+                    for file_index in range(len(file_paths)):
+                        if not self._is_processing_cancelled(processing_id):
+                            self._update_file_progress(
+                                processing_id, file_index,
+                                progress=progress,
+                                phase=phase_name,
+                                message=message
+                            )
+                    
+                    # Check for cancellation
+                    if self._is_processing_cancelled(processing_id):
+                        return
+            
+            # Start progress updater in background
+            progress_task = asyncio.create_task(progress_updater())
+            
+            try:
+                # Create a completion callback that will be called when processing truly finishes
+                def completion_callback(callback_processing_id=None, status=None, message=None, progress=None, **kwargs):
+                    if status == "completed" or (progress and progress >= 100):
+                        # This is called from hybrid_system.py AFTER the completion logs
+                        logger.info(f"Real processing completed - now sending completion status to UI")
+                        
+                        # Use the processing_id from the outer scope
+                        current_status = PROCESSING_STATUS.get(processing_id, {})
+                        existing_file_progress = current_status.get("individual_files", [])
+                        
+                        # Optional: Clean up uploaded files after successful processing
+                        # Check if files are from uploads directory
+                        from pathlib import Path
+                        upload_files = [f for f in file_paths if Path(f).parent.name == "uploads"]
+                        if upload_files:
+                            logger.info(f"Processing completed successfully - uploaded files can be cleaned up if needed")
+                            # Note: Cleanup is available via /api/cleanup-uploads endpoint
+                        
+                        completion_message = self._generate_completion_message(len(file_paths))
+                        self._update_processing_status(
+                            processing_id,  # Use the processing_id from outer scope
+                            "completed", 
+                            completion_message, 
+                            100,
+                            total_files=len(file_paths),
+                            files_completed=len(file_paths),
+                            file_progress=existing_file_progress
+                        )
+                
+                # Actual batch processing - use completion callback for proper timing
+                await self.system.ingest_documents(
+                    file_paths,
+                    processing_id=processing_id,
+                    status_callback=completion_callback
+                )
+                
+                # Cancel progress updater since real processing is done
+                progress_task.cancel()
+                
+                # Mark all files as completed with a small delay to show 90% → 100% transition
+                for file_index in range(len(file_paths)):
+                    self._update_file_progress(
+                        processing_id, file_index,
+                        status="completed",
+                        progress=100,
+                        phase="completed",
+                        message="Processing completed successfully"
+                    )
+                
+                # No delay here - let the main method handle timing
+                
+            except Exception as e:
+                # Cancel progress updater on error
+                progress_task.cancel()
+                
+                # Mark all files as failed
+                for file_index in range(len(file_paths)):
+                    self._update_file_progress(
+                        processing_id, file_index,
+                        status="failed",
+                        progress=0,
+                        phase="error",
+                        message=f"Processing failed: {str(e)}",
+                        error=str(e)
+                    )
+                raise e
+            
+            # Don't send completed status here - let the main method handle it
+            # This avoids duplicate "completed" messages and ensures proper timing
+            logger.info(f"Batch processing completed for {len(file_paths)} files")
+            
+        except Exception as e:
+            logger.error(f"Error in batch file processing: {str(e)}")
+            self._update_processing_status(
+                processing_id,
+                "failed",
+                f"File processing failed: {str(e)}",
+                0
+            )
+
+    async def _process_files_with_progress(self, processing_id: str, file_paths: List[str]):
+        """Process files sequentially with detailed per-file progress tracking"""
+        try:
+            for file_index, file_path in enumerate(file_paths):
+                # Check for cancellation before each file
+                if self._is_processing_cancelled(processing_id):
+                    return
+                
+                filename = Path(file_path).name
+                logger.info(f"Starting processing of file {file_index + 1}/{len(file_paths)}: {filename}")
+                
+                # Update file status to processing
+                self._update_file_progress(
+                    processing_id, file_index, 
+                    status="processing", 
+                    progress=0, 
+                    phase="docling", 
+                    message="Converting document..."
+                )
+                
+                try:
+                    # Process individual file with progress updates
+                    await self._process_single_file_with_progress(processing_id, file_index, file_path)
+                    
+                    # Mark file as completed
+                    self._update_file_progress(
+                        processing_id, file_index,
+                        status="completed",
+                        progress=100,
+                        phase="completed",
+                        message="Processing completed successfully"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error processing file {filename}: {str(e)}")
+                    self._update_file_progress(
+                        processing_id, file_index,
+                        status="failed",
+                        progress=0,
+                        phase="error",
+                        message=f"Processing failed: {str(e)}",
+                        error=str(e)
+                    )
+                    # Continue with next file instead of stopping entire process
+                    continue
+            
+            # Update overall progress to completed
+            completed_files = sum(1 for i in range(len(file_paths)) 
+                                if PROCESSING_STATUS.get(processing_id, {}).get("individual_files", [{}])[i].get("status") == "completed")
+            
+            completion_message = self._generate_completion_message(completed_files)
+            if completed_files < len(file_paths):
+                failed_count = len(file_paths) - completed_files
+                completion_message += f" ({failed_count} files failed)"
+            
+            self._update_processing_status(
+                processing_id,
+                "completed",
+                completion_message,
+                100
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in file processing: {str(e)}")
+            self._update_processing_status(
+                processing_id,
+                "failed",
+                f"File processing failed: {str(e)}",
+                0
+            )
+    
+    async def _process_single_file_with_progress(self, processing_id: str, file_index: int, file_path: str):
+        """Process a single file with detailed progress updates"""
+        try:
+            filename = Path(file_path).name
+            logger.info(f"Processing file {file_index + 1}: {filename}")
+            
+            # Phase 1: Document conversion (Docling)
+            self._update_file_progress(
+                processing_id, file_index,
+                progress=10,
+                phase="docling",
+                message="Converting document format..."
+            )
+            logger.info(f"File {filename}: Starting document conversion")
+            await asyncio.sleep(0.5)  # Small delay to make progress visible
+            
+            # Phase 2: Text chunking
+            self._update_file_progress(
+                processing_id, file_index,
+                progress=30,
+                phase="chunking",
+                message="Splitting into chunks..."
+            )
+            logger.info(f"File {filename}: Starting text chunking")
+            await asyncio.sleep(0.5)  # Small delay to make progress visible
+            
+            # Phase 3: Knowledge graph extraction
+            self._update_file_progress(
+                processing_id, file_index,
+                progress=50,
+                phase="kg_extraction",
+                message="Extracting knowledge graph..."
+            )
+            logger.info(f"File {filename}: Starting knowledge graph extraction")
+            
+            # Actual processing - call the system with single file
+            # Note: This processes the single file through the full pipeline
+            await self.system.ingest_documents(
+                [file_path],
+                processing_id=processing_id,
+                status_callback=lambda pid, status, msg, prog, **kwargs: self._update_file_progress(
+                    processing_id, file_index, progress=min(50 + int(prog * 0.4), 90)
+                )
+            )
+            
+            # Phase 4: Indexing
+            self._update_file_progress(
+                processing_id, file_index,
+                progress=90,
+                phase="indexing",
+                message="Building indexes..."
+            )
+            logger.info(f"File {filename}: Completed processing")
+            await asyncio.sleep(0.5)  # Small delay to make progress visible
+            
+        except Exception as e:
+            logger.error(f"Error in single file processing: {str(e)}")
+            raise e
     
     async def _cleanup_partial_processing(self, processing_id: str):
         """Clean up partial processing artifacts when cancelled"""
@@ -317,48 +657,32 @@ class FlexibleGraphRAGBackend:
                     else:
                         cleaned_paths.append(path)
                 
+                # Initialize per-file progress tracking
+                file_progress = self._initialize_file_progress(processing_id, cleaned_paths)
+                logger.info(f"Initialized per-file progress for {len(file_progress)} files")
+                
                 self._update_processing_status(
                     processing_id, 
                     "processing", 
                     f"Processing {len(cleaned_paths)} file(s)...", 
                     30,
                     total_files=len(cleaned_paths),
-                    files_completed=0
+                    files_completed=0,
+                    file_progress=file_progress
                 )
+                
+                logger.info(f"Updated status with file_progress: {len(file_progress)} files")
                 
                 # Check for cancellation before heavy processing
                 if self._is_processing_cancelled(processing_id):
                     return
-                    
-                self._update_processing_status(
-                    processing_id, 
-                    "processing", 
-                    "Extracting text and generating embeddings...", 
-                    50
-                )
                 
-                self._update_processing_status(
-                    processing_id, 
-                    "processing", 
-                    "Building knowledge graph from documents...", 
-                    70
-                )
+                # Process files with per-file progress tracking (batch processing)
+                await self._process_files_batch_with_progress(processing_id, cleaned_paths)
                 
-                # Actual processing with cancellation support
-                await self.system.ingest_documents(
-                    cleaned_paths, 
-                    processing_id=processing_id,
-                    status_callback=self._update_processing_status
-                )
-                
-                # Generate dynamic completion message based on enabled features
-                completion_message = self._generate_completion_message(len(cleaned_paths))
-                self._update_processing_status(
-                    processing_id, 
-                    "completed", 
-                    completion_message, 
-                    100
-                )
+                # Completion status is now sent by the callback from hybrid_system.py
+                # This ensures proper timing after all processing logs are written
+                logger.info(f"Batch processing method completed for {len(cleaned_paths)} files")
                 
             elif data_source == "cmis":
                 self._update_processing_status(

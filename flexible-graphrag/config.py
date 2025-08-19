@@ -9,6 +9,7 @@ class DataSourceType(str, Enum):
     FILESYSTEM = "filesystem"
     CMIS = "cmis"
     ALFRESCO = "alfresco"
+    UPLOAD = "upload"
 
 class VectorDBType(str, Enum):
     NONE = "none"  # Disable vector search

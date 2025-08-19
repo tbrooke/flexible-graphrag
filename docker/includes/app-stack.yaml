@@ -26,6 +26,7 @@ services:
       
       # Database configuration 
       - VECTOR_DB=qdrant
+      #- VECTOR_DB=neo4j
       - GRAPH_DB=neo4j
       - SEARCH_DB=elasticsearch
       
@@ -44,6 +45,7 @@ services:
       
       # Vector DB Configuration Examples:
       # Qdrant (current):
+      - VECTOR_DB=qdrant
       - 'VECTOR_DB_CONFIG={"host": "host.docker.internal", "port": 6333, "collection_name": "hybrid_search_vector"}'
       # Neo4j Vector (alternative):
       #- VECTOR_DB=neo4j  
@@ -54,19 +56,7 @@ services:
       # OpenSearch Vector (alternative):
       #- VECTOR_DB=opensearch  
       #- 'VECTOR_DB_CONFIG={"url": "http://host.docker.internal:9201", "index_name": "hybrid_search_vector"}'
-      
-      # LLM configuration (Ollama) - Active
-      - USE_OPENAI=false
-      - LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=llama3.1:8b
-      
-      # Optional: OpenAI (commented out - add OPENAI_API_KEY to use)
-      #- USE_OPENAI=true
-      #- LLM_PROVIDER=openai
-      #- OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      #- OPENAI_MODEL=gpt-4o-mini
-      
+
       # Search DB Configuration Examples:
       # Elasticsearch (current):
       - ELASTICSEARCH_URL=http://host.docker.internal:9200
@@ -83,16 +73,36 @@ services:
       - QDRANT_HOST=host.docker.internal
       - QDRANT_PORT=6333
       - OPENSEARCH_URL=http://host.docker.internal:9201
+
       
+      # OpenAI is recommended over Ollama for speed of KG building pipeline, speed of search and q&a query    
+
+      # Ollama LLM configuration
+      - USE_OPENAI=false
+      - LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      #- OLLAMA_MODEL=llama3.1:8b
+      #- OLLAMA_MODEL=llama3.2:latest
+      - OLLAMA_MODEL=gpt-oss:20b
+      
+                  
+      #  OpenAI LLM configuration (commented out - add OPENAI_API_KEY to use)
+      #- USE_OPENAI=true
+      #- LLM_PROVIDER=openai
+      #- OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      #- OPENAI_MODEL=gpt-4o-mini
+        
+       
       # Processing configuration
       - CHUNK_SIZE=1024
       - CHUNK_OVERLAP=128
       - MAX_TRIPLETS_PER_CHUNK=10
+
     ports:
       - "8000:8000"
     volumes:
       - ../../sample-docs:/app/sample_docs:ro
-      - ../../uploads:/app/uploads
+      - upload_data:/app/uploads
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -143,3 +153,7 @@ services:
     restart: unless-stopped
 
 # Self-contained service definitions
+
+volumes:
+  upload_data:
+    driver: local

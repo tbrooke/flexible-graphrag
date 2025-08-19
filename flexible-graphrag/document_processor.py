@@ -126,12 +126,16 @@ class DocumentProcessor:
                     
                     logger.info(f"Converting document with Docling: {file_path}")
                     
-                    # Convert using Docling with cancellation support
+                    # Convert using Docling with cancellation support and proper async handling
                     import asyncio
                     import functools
                     import concurrent.futures
                     
-                    loop = asyncio.get_event_loop()
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
                     convert_func = functools.partial(self.converter.convert, str(file_path))
                     
                     # Run with periodic cancellation checks using configured timeout

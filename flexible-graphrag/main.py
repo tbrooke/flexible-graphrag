@@ -2,7 +2,7 @@ import os
 import logging
 import sys
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -10,6 +10,7 @@ from typing import List, Optional, Dict
 import asyncio
 from pathlib import Path
 import uvicorn
+import shutil
 from dotenv import load_dotenv
 import importlib.metadata
 import nest_asyncio
@@ -19,12 +20,22 @@ from backend import get_backend
 # Load environment variables
 load_dotenv()
 
-# Fix for Windows event loop issues with Ollama/LlamaIndex
+# Fix for async event loop issues with containers and LlamaIndex
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+else:
+    # Docker/Linux environments - use default policy but ensure proper loop handling
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 # Apply nest_asyncio to allow nested event loops (required for LlamaIndex in FastAPI)
 nest_asyncio.apply()
+
+# Ensure we have a proper event loop for Docker containers
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
 # Configure logging with both file and console output
 log_filename = f'flexible-graphrag-api-{datetime.now().strftime("%Y%m%d-%H%M%S")}.log'
@@ -138,6 +149,99 @@ async def ingest(request: IngestRequest):
             
     except Exception as e:
         logger.error(f"Error starting document ingestion: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+def cleanup_uploads(keep_recent_files: int = 0):
+    """Clean up uploaded files, optionally keeping most recent files"""
+    try:
+        upload_dir = Path("./uploads")
+        if not upload_dir.exists():
+            return
+        
+        # Get all files sorted by modification time (newest first)
+        files = sorted(upload_dir.glob("*"), key=lambda x: x.stat().st_mtime, reverse=True)
+        
+        # Remove files beyond the keep_recent_files limit
+        for file_path in files[keep_recent_files:]:
+            if file_path.is_file():
+                file_path.unlink()
+                logger.info(f"Cleaned up uploaded file: {file_path.name}")
+                
+        logger.info(f"Upload cleanup completed - kept {min(len(files), keep_recent_files)} recent files")
+    except Exception as e:
+        logger.warning(f"Error during upload cleanup: {str(e)}")
+
+@app.post("/api/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    """Upload files and store them in upload directory for processing"""
+    try:
+        # Create upload directory if it doesn't exist
+        upload_dir = Path("./uploads")
+        upload_dir.mkdir(exist_ok=True)
+        
+        uploaded_files = []
+        skipped_files = []
+        
+        # File size limit (100MB per file)
+        MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB in bytes
+        
+        for file in files:
+            # Validate file type (basic validation)
+            if not file.filename:
+                continue
+            
+            # Read file content to check size
+            content = await file.read()
+            
+            # Check file size
+            if len(content) > MAX_FILE_SIZE:
+                skipped_files.append({
+                    "filename": file.filename,
+                    "reason": f"File too large ({len(content) / 1024 / 1024:.1f}MB > 100MB)"
+                })
+                continue
+                
+            # Check if file type is supported
+            supported_extensions = {'.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.md', '.html', '.csv', '.png', '.jpg', '.jpeg'}
+            file_extension = Path(file.filename).suffix.lower()
+            
+            if file_extension not in supported_extensions:
+                skipped_files.append({
+                    "filename": file.filename,
+                    "reason": f"Unsupported file type: {file_extension}"
+                })
+                continue
+            
+            # Save file to upload directory (overwrite if exists)
+            file_path = upload_dir / file.filename
+            
+            # Write file content (content already read for size validation)
+            # This will overwrite existing files with the same name
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            
+            uploaded_files.append({
+                "filename": file.filename,
+                "saved_as": file_path.name,  # Now always matches original filename
+                "path": str(file_path),
+                "size": len(content)
+            })
+            
+            logger.info(f"Uploaded file: {file.filename} -> {file_path}")
+        
+        response_message = f"Successfully uploaded {len(uploaded_files)} files"
+        if skipped_files:
+            response_message += f", skipped {len(skipped_files)} files"
+        
+        return {
+            "success": True,
+            "message": response_message,
+            "files": uploaded_files,
+            "skipped": skipped_files
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading files: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search")
@@ -265,6 +369,19 @@ async def cancel_processing(processing_id: str):
         raise
     except Exception as e:
         logger.error(f"Error cancelling processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cleanup-uploads")
+async def cleanup_uploads_endpoint(keep_recent: int = 0):
+    """Clean up uploaded files, optionally keeping most recent files"""
+    try:
+        cleanup_uploads(keep_recent_files=keep_recent)
+        return {
+            "success": True,
+            "message": f"Upload cleanup completed - kept {keep_recent} recent files"
+        }
+    except Exception as e:
+        logger.error(f"Error during upload cleanup: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/processing-events/{processing_id}")

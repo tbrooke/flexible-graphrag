@@ -240,21 +240,36 @@ class HybridSearchSystem:
         ]
         
         # Process documents through transformations to get nodes
+        import time
+        start_time = time.time()
+        logger.info(f"Starting LlamaIndex IngestionPipeline with transformations: {[type(t).__name__ for t in transformations]}")
+        
         pipeline = IngestionPipeline(transformations=transformations)
         
         # Use run_in_executor to avoid asyncio conflict
         import asyncio
         import functools
         
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         run_pipeline = functools.partial(
             pipeline.run,
             documents=documents
         )
         
+        logger.info("Executing IngestionPipeline.run() - this includes chunking, keyword extraction, summary extraction, and embedding generation")
+        # Use run_in_executor with proper event loop handling to avoid nested async issues
         nodes = await loop.run_in_executor(None, run_pipeline)
         
-        logger.info(f"Generated {len(nodes)} nodes from {len(documents)} documents")
+        pipeline_duration = time.time() - start_time
+        logger.info(f"IngestionPipeline completed in {pipeline_duration:.2f}s - Generated {len(nodes)} nodes from {len(documents)} documents")
+        
+        # Log embedding model details for performance analysis
+        embed_model_name = getattr(self.embed_model, 'model_name', str(type(self.embed_model).__name__))
+        logger.info(f"Embeddings generated using: {embed_model_name}")
         
         # Check for cancellation after node processing
         if _check_cancellation():
@@ -263,15 +278,21 @@ class HybridSearchSystem:
         
         # Step 3: Create vector index from processed nodes (if vector search enabled)
         if self.vector_store is not None:
-            logger.info("Creating vector index from nodes...")
+            vector_start_time = time.time()
+            vector_store_type = type(self.vector_store).__name__
+            logger.info(f"Creating vector index from {len(nodes)} nodes using {vector_store_type}...")
             _update_progress("Building vector index...", 50, current_phase="indexing")
             
             vector_storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
+            logger.info("Starting VectorStoreIndex creation - this stores embeddings in the vector database")
             self.vector_index = VectorStoreIndex(
                 nodes=nodes,
                 storage_context=vector_storage_context,
                 show_progress=True
             )
+            
+            vector_duration = time.time() - vector_start_time
+            logger.info(f"Vector index creation completed in {vector_duration:.2f}s using {vector_store_type}")
         else:
             logger.info("Vector search disabled - skipping vector index creation")
             _update_progress("Vector search disabled - skipping vector index...", 50, current_phase="indexing")
@@ -284,7 +305,11 @@ class HybridSearchSystem:
         
         # Step 4: Create graph index using the same nodes (only if knowledge graph is enabled)
         if self.config.enable_knowledge_graph:
-            logger.info("Creating graph index from same nodes...")
+            kg_setup_start_time = time.time()
+            graph_store_type = type(self.graph_store).__name__
+            llm_model_name = getattr(self.llm, 'model', str(type(self.llm).__name__))
+            
+            logger.info(f"Creating graph index from {len(nodes)} nodes using {graph_store_type} with LLM: {llm_model_name}")
             _update_progress("Extracting knowledge graph...", 70, current_phase="kg_extraction")
             
             # Use knowledge graph extraction for graph functionality
@@ -305,9 +330,9 @@ class HybridSearchSystem:
                 )
                 kg_extractors = [kg_extractor]
                 if has_schema:
-                    logger.info(f"Using knowledge graph extraction with '{self.config.schema_name}' schema")
+                    logger.info(f"Using knowledge graph extraction with '{self.config.schema_name}' schema and LLM: {llm_model_name}")
                 elif is_kuzu:
-                    logger.info("Using knowledge graph extraction with default schema for Kuzu")
+                    logger.info(f"Using knowledge graph extraction with default schema for Kuzu and LLM: {llm_model_name}")
             else:
                 # Use simple extractor for Neo4j without schema
                 kg_extractor = self.schema_manager.create_extractor(
@@ -315,7 +340,10 @@ class HybridSearchSystem:
                     use_schema=False
                 )
                 kg_extractors = [kg_extractor]
-                logger.info("Using simple knowledge graph extraction (no schema)")
+                logger.info(f"Using simple knowledge graph extraction (no schema) with LLM: {llm_model_name}")
+            
+            kg_setup_duration = time.time() - kg_setup_start_time
+            logger.info(f"Knowledge graph extractor setup completed in {kg_setup_duration:.2f}s")
         else:
             logger.info("Knowledge graph extraction disabled - skipping graph index creation")
             _update_progress("Skipping knowledge graph extraction...", 70, current_phase="kg_extraction")
@@ -332,7 +360,11 @@ class HybridSearchSystem:
             import asyncio
             import functools
             
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
             # For Kuzu with separate vector store (Approach 2), we need to explicitly provide vector_store
             graph_index_kwargs = {
                 "documents": documents,
@@ -365,9 +397,19 @@ class HybridSearchSystem:
             #     except Exception as debug_error:
             #         logger.warning(f"DEBUG: Could not check Kuzu tables before PropertyGraphIndex: {debug_error}")
             
-            create_graph_index = functools.partial(PropertyGraphIndex.from_documents, **graph_index_kwargs)
+            # This is the most time-consuming step - LLM calls for entity/relationship extraction
+            graph_creation_start_time = time.time()
+            logger.info(f"Starting PropertyGraphIndex.from_documents() - this will make LLM calls to extract entities and relationships from {len(documents)} documents")
+            logger.info(f"LLM model being used for knowledge graph extraction: {llm_model_name}")
+            logger.info(f"Graph database target: {graph_store_type}")
             
+            # Use run_in_executor with proper nest_asyncio handling
+            create_graph_index = functools.partial(PropertyGraphIndex.from_documents, **graph_index_kwargs)
             self.graph_index = await loop.run_in_executor(None, create_graph_index)
+            
+            graph_creation_duration = time.time() - graph_creation_start_time
+            logger.info(f"PropertyGraphIndex creation completed in {graph_creation_duration:.2f}s")
+            logger.info(f"Knowledge graph extraction finished - entities and relationships stored in {graph_store_type}")
             
             # Check for cancellation after graph index creation
             if _check_cancellation():
@@ -384,7 +426,21 @@ class HybridSearchSystem:
         # Step 5: Persist indexes if configured
         self._persist_indexes()
         
-        logger.info("Document ingestion completed successfully!")
+        total_duration = time.time() - start_time
+        vector_time = vector_duration if self.vector_store and 'vector_duration' in locals() else 0
+        graph_time = graph_creation_duration if self.config.enable_knowledge_graph and 'graph_creation_duration' in locals() else 0
+        
+        logger.info(f"Document ingestion completed successfully in {total_duration:.2f}s total!")
+        logger.info(f"Performance summary - Pipeline: {pipeline_duration:.2f}s, Vector: {vector_time:.2f}s, Graph: {graph_time:.2f}s")
+        
+        # Notify completion via status callback - this will trigger the UI completion status
+        if status_callback:
+            status_callback(
+                processing_id=processing_id,
+                status="completed",
+                message="Document ingestion completed successfully!",
+                progress=100
+            )
     
     async def ingest_cmis(self, cmis_config: dict = None, processing_id: str = None, status_callback=None):
         """Ingest documents from CMIS source"""
@@ -695,12 +751,17 @@ class HybridSearchSystem:
         import asyncio
         import functools
         
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
         run_pipeline = functools.partial(
             pipeline.run,
             documents=[document]
         )
         
+        # Use run_in_executor with proper event loop handling to avoid nested async issues
         nodes = await loop.run_in_executor(None, run_pipeline)
         
         # Check for cancellation after node processing
@@ -716,14 +777,18 @@ class HybridSearchSystem:
             import asyncio
             import functools
             
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            # Use run_in_executor with proper nest_asyncio handling
             create_vector_index = functools.partial(
                 VectorStoreIndex.from_documents,
                 documents=[document],
                 storage_context=storage_context,
                 embed_model=self.embed_model
             )
-            
             self.vector_index = await loop.run_in_executor(None, create_vector_index)
         else:
             # Add to existing index
@@ -761,7 +826,12 @@ class HybridSearchSystem:
             import asyncio
             import functools
             
-            loop = asyncio.get_event_loop()
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            # Use run_in_executor with proper nest_asyncio handling
             create_graph_index = functools.partial(
                 PropertyGraphIndex.from_documents,
                 documents=[document],
@@ -770,7 +840,6 @@ class HybridSearchSystem:
                 kg_extractors=kg_extractors,
                 storage_context=graph_storage_context
             )
-            
             self.graph_index = await loop.run_in_executor(None, create_graph_index)
         else:
             # Add to existing graph index

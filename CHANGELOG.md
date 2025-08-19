@@ -2,6 +2,96 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-18] - Docker Rebuild & Async Event Loop Resolution
+
+### Fixed
+- **Critical Async Event Loop Errors**
+  - Resolved "Event object bound to different event loop" errors during file processing
+  - Fixed "Detected nested async" errors with Ollama, especially for Office files requiring Docling
+  - Implemented hybrid async approach with run_in_executor for all LlamaIndex operations
+  - Proper event loop handling with nest_asyncio.apply() and RuntimeError catching
+
+- **React Docker UI Issues**
+  - Fixed old UI display by forcing Docker rebuild with --no-cache flag
+  - Added API routing for both direct (port 3000) and proxied (port 8070) React UI
+  - Added proxy configuration to vite.docker.config.ts and nginx location block
+
+- **File Upload Management**
+  - Fixed file overwriting instead of renaming (e.g., cmispress.txt vs cmispress_34.txt)
+  - Added cleanup functionality via /api/cleanup-uploads endpoint
+  - Fixed minor UI bugs like dollar sign in "Remove Selected" button
+
+### Enhanced
+- **Docker Configuration**
+  - Updated to use gpt-5-oss:20b instead of llama3.1:8b for better quality
+  - Fixed Angular ES module __dirname issues with fileURLToPath
+  - Added --esm flag to ts-node commands
+
+### Validated
+- **End-to-End Testing**
+  - File upload (PDF, Office docs, text) working
+  - CMIS and Alfresco repository integration functional
+  - Search/query/chat functionality operational across all data sources
+
+## [2025-08-17] - Tab UI Redesign & File Processing Table (React UI Only)
+
+### Added
+- **5-Tab Navigation System (React UI)**
+  - Sources: Data source configuration and file upload
+  - Processing: File management table with progress tracking
+  - Search: Quick search functionality
+  - Chat: Interactive Q&A and search conversations
+  - Graph: Placeholder for future graph visualization
+
+- **Processing Table Implementation (React UI)**
+  - Single-row-per-file design with wide progress bar column (400px+)
+  - Multi-select functionality with bulk operations
+  - Windows-style file size formatting
+  - Real-time per-file progress tracking within table rows
+
+### Enhanced
+- **File Management Features (React UI)**
+  - Individual file remove buttons and select all/individual checkboxes
+  - "Delete Selected (N)" button with proper state management
+  - Drag-and-drop upload integration with table display
+  - Color-coded status chips and progress phase information
+
+- **Per-File Progress Tracking**
+  - Backend per-file progress tracking with _initialize_file_progress and _update_file_progress
+  - Fixed completion status timing by moving final callback to hybrid_system.py
+  - Enhanced React frontend with individual file progress cards
+  - Persistent debug panel with localStorage and performance logging
+
+### Fixed
+- **File Upload Progress Bar Issues (React UI)**
+  - Root cause: Filename mismatch between UI (original names) and backend (saved names with duplicates)
+  - Solution: Updated selectedFiles and configuredFiles with saved filenames after upload
+  - Progress bars now display correctly with blue bars and real-time updates
+
+### Note
+- Vue and Angular frontends maintain previous UI design pending future updates
+
+## [2025-08-16] - Documentation & Deployment Improvements
+
+### Enhanced
+- **README.md Updates**
+  - Fixed Python backend setup with proper project directory paths
+  - Updated environment configuration to copy env-sample.txt instead of creating empty .env
+  - Restructured Frontend Setup section to clarify production vs development modes
+  - Enhanced Project Structure section with missing directories (/docker, /docs, /scripts, /tests)
+
+- **Docker Service Configuration**
+  - Comprehensive service comment-out guide for docker-compose.yaml
+  - Detailed guidance for customizing all services (neo4j, kuzu, qdrant, elasticsearch, opensearch, alfresco)
+  - Removed "Recommended" from Docker Deployment header
+  - Added app-stack.yaml environment configuration guidance
+
+### Documentation
+- **Deployment Clarity**
+  - Clear separation between Docker and standalone deployment approaches
+  - Updated frontend deployment section noting Docker limitations for filesystem sources
+  - Added reference to docs/ENVIRONMENT-CONFIGURATION.md for detailed setup
+
 ## [2025-08-15] - Frontend Environment Variables & Vector Database Validation
 
 ### Fixed
