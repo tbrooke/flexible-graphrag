@@ -18,9 +18,38 @@ A configurable hybrid search system that optionally combines vector similarity s
 
 ## Frontend Screenshots
 
-| Angular UI | React UI | Vue UI |
-|------------|----------|--------|
-| ![Angular UI](./angular-ui.png) | ![React UI](./react-ui.png) | ![Vue UI](./vue-ui.png) |
+### Angular Frontend - Tabbed Interface
+
+<details>
+<summary>Click to view Angular UI screenshots</summary>
+
+| Sources Tab | Processing Tab | Search Tab | Chat Tab |
+|-------------|----------------|------------|----------|
+| [![Angular Sources](./screen-shots/angular-sources.png)](./screen-shots/angular-sources.png) | [![Angular Processing](./screen-shots/angular-processing.png)](./screen-shots/angular-processing.png) | [![Angular Search](./screen-shots/angular-search.png)](./screen-shots/angular-search.png) | [![Angular Chat](./screen-shots/angular-chat.png)](./screen-shots/angular-chat.png) |
+
+</details>
+
+### React Frontend - Tabbed Interface
+
+<details open>
+<summary>Click to view React UI screenshots</summary>
+
+| Sources Tab | Processing Tab | Search Tab | Chat Tab |
+|-------------|----------------|------------|----------|
+| [![React Sources](./screen-shots/react-sources.png)](./screen-shots/react-sources.png) | [![React Processing](./screen-shots/react-processing.png)](./screen-shots/react-processing.png) | [![React Search](./screen-shots/react-search.png)](./screen-shots/react-search.png) | [![React Chat](./screen-shots/react-chat.png)](./screen-shots/react-chat.png) |
+
+</details>
+
+### Vue Frontend - Tabbed Interface
+
+<details>
+<summary>Click to view Vue UI screenshots</summary>
+
+| Sources Tab | Processing Tab | Search Tab | Chat Tab |
+|-------------|----------------|------------|----------|
+| [![Vue Sources](./screen-shots/vue-sources.png)](./screen-shots/vue-sources.png) | [![Vue Processing](./screen-shots/vue-processing.png)](./screen-shots/vue-processing.png) | [![Vue Search](./screen-shots/vue-search.png)](./screen-shots/vue-search.png) | [![Vue Chat](./screen-shots/vue-chat.png)](./screen-shots/vue-chat.png) |
+
+</details>
 
 ## System Components
 
@@ -117,13 +146,78 @@ Current configuration supports (via LlamaIndex abstractions, can be extended to 
 - **Anthropic**: Claude models for complex reasoning
 - **Google Gemini**: Google's latest language models
 
-#### ⚠️ Kuzu + LLM Performance Recommendation
-**When using Kuzu as your graph database, strongly consider using OpenAI instead of Ollama** for significantly better performance:
+#### ⚠️ LLM Performance Recommendations
 
-- **LlamaIndex Knowledge Graph Extraction for Kuzu**: Using OpenAI models are much faster at entity/relationship extraction. Work was done leveraging a vector database (qdrant to help)
-- **Build Performance**: Even larger Ollama models (gpt-oss:20b) are considerably slower than OpenAI for graph construction
-- **Small Document Impact**: Performance is a problem even with small documents
-- Also search is slower.
+**General Performance with LlamaIndex: OpenAI vs Ollama**
+
+Based on testing with OpenAI GPT-4o-mini and Ollama models (llama3.1:8b, llama3.2:latest, gpt-oss:20b), **OpenAI consistently outperforms Ollama models** in LlamaIndex operations:
+
+- **Document Processing**: OpenAI models process documents significantly faster
+- **Entity Extraction**: OpenAI provides much quicker entity and relationship identification  
+- **Query Response**: Search and Q&A queries complete faster with OpenAI
+- **Resource Efficiency**: Better performance even on high-end hardware
+
+**Kuzu + Ollama: Strongly Avoid This Combination**
+
+**When using Kuzu as your graph database, very strongly recommend OpenAI over Ollama models** - the performance difference is dramatic even on powerful hardware (tested on 4090 Nvidia GPU, AMD 5950x 16-core CPU, 64GB RAM):
+
+- **Knowledge Graph Construction**: Ollama models are extremely slow for entity/relationship extraction with Kuzu
+- **Large Model Impact**: Even larger Ollama models (gpt-oss:20b) remain considerably slower than OpenAI GPT-4o-mini
+- **Small Document Problem**: Performance issues persist even with small documents
+- **Search Degradation**: Graph-enhanced search queries are noticeably slower
+- **Development Impact**: Slow feedback loops significantly impact development workflow
+
+**Recommendation**: Use OpenAI for Kuzu deployments, reserve Ollama for Neo4j-based setups where performance is more acceptable.
+
+### RAG without GraphRAG
+
+The system can be configured for **RAG (Retrieval-Augmented Generation) without also GraphRAG** This simpler deployment also only do setting up vectors for RAG. It will skip setup for GraphRAG: no auto-building Graphs / Knowledge Graphs in a Graph Database. The processing time will be faster. You can still do Hybrid Search (full text search + vectors for RAG). You can also still do AI Q&A Queries or Chats.  
+
+#### Configuration Steps
+
+To enable RAG-only mode, configure these environment variables in your `.env` file:
+
+1. **Configure Search Database** (choose one):
+   ```bash
+   # Option 1: Elasticsearch
+   SEARCH_DB=elasticsearch
+   SEARCH_DB_CONFIG={"index_name": "documents", "host": "localhost", "port": 9200}
+   
+   # Option 2: OpenSearch  
+   SEARCH_DB=opensearch
+   SEARCH_DB_CONFIG={"index_name": "documents", "host": "localhost", "port": 9201}
+   
+   # Option 3: Built-in BM25
+   SEARCH_DB=bm25
+   SEARCH_DB_CONFIG={"persist_dir": "./bm25_index"}
+   ```
+
+2. **Configure Vector Database** (choose one):
+   ```bash
+   # Option 1: Neo4j (vector-only)
+   VECTOR_DB=neo4j
+   VECTOR_DB_CONFIG={"uri": "bolt://localhost:7687", "username": "neo4j", "password": "password"}
+   
+   # Option 2: Qdrant
+   VECTOR_DB=qdrant  
+   VECTOR_DB_CONFIG={"host": "localhost", "port": 6333, "collection_name": "documents"}
+   
+   # Option 3: Elasticsearch (dual-purpose)
+   VECTOR_DB=elasticsearch
+   VECTOR_DB_CONFIG={"index_name": "vectors", "host": "localhost", "port": 9200}
+   
+   # Option 4: OpenSearch (dual-purpose)
+   VECTOR_DB=opensearch
+   VECTOR_DB_CONFIG={"index_name": "vectors", "host": "localhost", "port": 9201}
+   ```
+
+3. **Disable Knowledge Graph**:
+   ```bash
+   GRAPH_DB=none
+   ENABLE_KNOWLEDGE_GRAPH=false
+   ```
+
+
 
 ## MCP Tools for MCP Clients like Claude Desktop, etc.
 
@@ -168,7 +262,7 @@ The MCP server provides 9 specialized tools for document intelligence workflows:
 Docker deployment offers two main approaches:
 
 #### Option A: Databases in Docker, App Standalone (Hybrid)
-**Best for**: Development, filesystem data sources, external content management systems
+**Best for**: Development, external content management systems, flexible deployment
 
 ```bash
 # Deploy only databases you need
@@ -193,7 +287,7 @@ uv run start.py
 ```
 
 **Use cases:**
-- ✅ **Filesystem data sources**: Direct access to local files
+- ✅ **File Upload**: Direct file upload through web interface
 - ✅ **External CMIS/Alfresco**: Connect to existing content management systems
 - ✅ **Development**: Easy debugging and hot-reloading
 - ✅ **Mixed environments**: Databases in containers, apps on host
@@ -222,15 +316,8 @@ docker-compose -f docker/docker-compose.yaml up -d
 - **Kuzu Explorer**: http://localhost:8002/
 
 **Data Source Workflow:**
-- ❌ **Filesystem**: Cannot access host machine files when running in Docker containers
-- ✅ **CMIS/Alfresco**: Upload files to Alfresco repository (running in Docker), then ingest from there
-  1. Access Alfresco at http://localhost:8080/alfresco (admin/admin)
-  2. Upload documents to `/Shared/GraphRAG` folder
-  3. In a Flexible GraphRAG UI (Angular, React, or Vue):
-     - Choose CMIS or Alfresco data source
-     - Enter file path: `/Shared/GraphRAG/cmispress.txt` (example)
-     - Click "Ingest Documents"
-  4. When ingestion completes, use Hybrid Search and/or Q&A queries
+- ✅ **File Upload**: Upload files directly through the web interface (drag & drop or file selection dialog on click)
+- ✅ **Alfresco/CMIS**: Connect to existing Alfresco systems or CMIS repositories
 
 #### Configuration
 
@@ -385,8 +472,6 @@ Follow the instructions in the Frontend Setup section for your chosen frontend f
 
 ### Frontend Deployment
 
-**Note**: Docker deployment not recommended currently due to filesystem data source limitations.
-
 #### Build Frontend
 ```bash
 # Angular (may have budget warnings - safe to ignore for development)
@@ -443,23 +528,20 @@ Each configuration sets up the appropriate ports, source maps, and debugging too
 
 ## Usage
 
-### 1. Ingest Documents
+The system provides a tabbed interface for document processing and querying. Follow these steps in order:
 
-The system supports three data sources. Choose your data source in the web interface:
+### 1. Sources Tab
 
-#### File System (Default)
-- **Select**: "File System" from the data source dropdown
-- **Enter**: Path to a file or folder (e.g., `C:\Documents\reports` or `/home/user/docs/report.pdf`)
-- **Supported files**: PDF, DOCX, PPTX, TXT, MD
-- **Click**: "Ingest Documents" to process
+Configure your data source and select files for processing:
 
-#### CMIS Repository
-- **Select**: "CMIS Repository" from the data source dropdown
-- **Configure**: 
-  - CMIS Repository URL (e.g., `http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom`)
-  - Username and password
-  - Folder path (e.g., `/Sites/example/documentLibrary`)
-- **Click**: "Ingest Documents" to process
+#### File Upload Data Source
+- **Select**: "File Upload" from the data source dropdown
+- **Add Files**: 
+  - **Drag & Drop**: Drag files directly onto the upload area
+  - **Click to Select**: Click the upload area to open file selection dialog (supports multi-select)
+  - **Note**: If you drag & drop new files after selecting via dialog, only the dragged files will be used
+- **Supported Formats**: PDF, DOCX, XLSX, PPTX, TXT, MD, HTML, CSV, PNG, JPG, and more
+- **Next Step**: Click "CONFIGURE PROCESSING →" to proceed to Processing tab
 
 #### Alfresco Repository
 - **Select**: "Alfresco Repository" from the data source dropdown
@@ -467,55 +549,76 @@ The system supports three data sources. Choose your data source in the web inter
   - Alfresco Base URL (e.g., `http://localhost:8080/alfresco`)
   - Username and password
   - Path (e.g., `/Sites/example/documentLibrary`)
-- **Click**: "Ingest Documents" to process
+- **Next Step**: Click "CONFIGURE PROCESSING →" to proceed to Processing tab
 
-The processing pipeline includes:
-- **Docling** for document conversion to markdown and text
-- **LlamaIndex** for vector indexing and knowledge graph creation
-- **Configurable vector database** for embeddings storage
-- **Configurable graph database** for knowledge graph storage
-- **Configurable search** via BM25 (built-in) or external search engines
+#### CMIS Repository
+- **Select**: "CMIS Repository" from the data source dropdown
+- **Configure**: 
+  - CMIS Repository URL (e.g., `http://localhost:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom`)
+  - Username and password
+  - Folder path (e.g., `/Sites/example/documentLibrary`)
+- **Next Step**: Click "CONFIGURE PROCESSING →" to proceed to Processing tab
 
-### 2. Search and Query
+### 2. Processing Tab
 
-The system offers two distinct modes for retrieving information:
+Process your selected documents and monitor progress:
 
-#### Hybrid Search (Document Retrieval)
+- **Start Processing**: Click "START PROCESSING" to begin document ingestion
+- **Monitor Progress**: View real-time progress bars for each file
+- **File Management**: 
+  - Use checkboxes to select files
+  - Click "REMOVE SELECTED (N)" to remove selected files from the list
+  - **Note**: This removes files from the processing queue, not from your system
+- **Processing Pipeline**: Documents are processed through Docling conversion, vector indexing, and knowledge graph creation
+
+### 3. Search Tab
+
+Perform searches on your processed documents:
+
+#### Hybrid Search
 - **Purpose**: Find and rank the most relevant document excerpts
-- **Use when**: You want to see actual source material and multiple perspectives
-- **Select**: "Hybrid Search" mode in the web interface
-- **Enter**: Search terms or phrases (e.g., "machine learning algorithms", "financial projections")
-- **Results**: Ranked list of document excerpts with:
-  - Relevance scores
-  - Source file names and types
-  - Exact text snippets from documents
+- **Usage**: Enter search terms or phrases (e.g., "machine learning algorithms", "financial projections")
+- **Action**: Click "SEARCH" button
+- **Results**: Ranked list of document excerpts with relevance scores and source information
 - **Best for**: Research, fact-checking, finding specific information across documents
 
-#### Q&A Query (AI-Generated Answers)
-- **Purpose**: Get synthesized answers to natural language questions
-- **Use when**: You want a comprehensive answer combining information from multiple sources
-- **Select**: "Q&A Query" mode in the web interface  
-- **Enter**: Natural language questions (e.g., "What are the main findings in the research papers?", "How do the quarterly results compare?")
-- **Results**: AI-generated narrative answers that:
-  - Synthesize information from multiple documents
-  - Provide coherent, contextual responses
-  - Reference the underlying source material
+#### Q&A Query
+- **Purpose**: Get AI-generated answers to natural language questions
+- **Usage**: Enter natural language questions (e.g., "What are the main findings in the research papers?")
+- **Action**: Click "ASK" button
+- **Results**: AI-generated narrative answers that synthesize information from multiple documents
 - **Best for**: Summarization, analysis, getting overviews of complex topics
 
-#### Technical Implementation
-The hybrid search combines three retrieval methods:
-- **Vector similarity** search using embeddings for semantic matching
-- **BM25 full-text** search for exact keyword matching
-- **Graph traversal** for entity and relationship discovery from knowledge graphs
+### 4. Chat Tab
 
-Both modes use the same underlying retrieval but process results differently:
-- **Search**: Returns raw ranked documents for user review
-- **Q&A**: Feeds documents to LLM for answer generation
-   
-3. **Testing Cleanup**
-   - Between tests you can delete detach nodes and relations in Neo4j, drop LlamaIndex vector and entity indexes 
-   - Use on a test Neo4j database no one else is using
-   - See [flexible-graphrag/README-neo4j.md](flexible-graphrag/README-neo4j.md) for LlamaIndex cleanup commands you can enter in the Neo4j console 
+Interactive conversational interface for document Q&A:
+
+- **Chat Interface**: 
+  - **Your Questions**: Displayed on the right side vertically
+  - **AI Answers**: Displayed on the left side vertically
+- **Usage**: Type questions and press Enter or click send
+- **Conversation History**: All questions and answers are preserved in the chat history
+- **Clear History**: Click "CLEAR HISTORY" button to start a new conversation
+- **Best for**: Iterative questioning, follow-up queries, conversational document exploration
+
+### Technical Implementation
+
+The system combines three retrieval methods for comprehensive hybrid search:
+
+- **Vector Similarity Search**: Uses embeddings to find semantically similar content based on meaning rather than exact word matches
+- **Full-Text Search**: Keyword-based search using:
+  - **Search Engines**: Elasticsearch or OpenSearch (which implement BM25 algorithms)
+  - **Built-in Option**: LlamaIndex local BM25 implementation for simpler deployments
+- **Graph Traversal**: Leverages knowledge graphs to find related entities and relationships, enabling GraphRAG (Graph-enhanced Retrieval Augmented Generation) that can surface contextually relevant information through entity connections and semantic relationships
+
+**How GraphRAG Works**: The system extracts entities (people, organizations, concepts) and relationships from documents, stores them in a graph database, then uses graph traversal during retrieval to find not just direct matches but also related information through entity connections. This enables more comprehensive answers that incorporate contextual relationships between concepts.
+
+### Testing Cleanup
+
+Between tests you can clean up data:
+- **Vector Indexes**: See [docs/VECTOR-DIMENSIONS.md](docs/VECTOR-DIMENSIONS.md) for vector database cleanup instructions
+- **Graph Data**: See [flexible-graphrag/README-neo4j.md](flexible-graphrag/README-neo4j.md) for graph-related cleanup commands
+- **Neo4j**: Use on a test Neo4j database no one else is using 
 
 ## Project Structure
 
