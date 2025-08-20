@@ -794,11 +794,14 @@ const App: React.FC = () => {
                 p: 3,
                 textAlign: 'center',
                 cursor: 'pointer',
-                backgroundColor: isDragOver ? '#e3f2fd' : 'transparent',
+                backgroundColor: isDragOver ? '#e3f2fd' : '#1976d2',
                 transition: 'all 0.2s ease-in-out',
                 '&:hover': {
                   borderColor: isDragOver ? '#1976d2' : '#999',
-                  backgroundColor: isDragOver ? '#e3f2fd' : '#f9f9f9'
+                  backgroundColor: isDragOver ? '#e3f2fd' : '#f9f9f9',
+                  '& .MuiTypography-root': {
+                    color: isDragOver ? '#1976d2' : '#333333'
+                  }
                 }
               }}
               onDrop={handleFileDrop}
@@ -807,10 +810,10 @@ const App: React.FC = () => {
               onDragLeave={handleDragLeave}
               onClick={() => document.getElementById('file-input')?.click()}
             >
-              <Typography variant="h6" gutterBottom sx={{ color: isDragOver ? '#1976d2' : '#333333' }}>
+              <Typography variant="h6" gutterBottom sx={{ color: isDragOver ? '#1976d2' : '#ffffff' }}>
                 Drop files here or click to select
               </Typography>
-              <Typography variant="body2" sx={{ color: isDragOver ? '#1976d2' : '#666666' }}>
+              <Typography variant="body2" sx={{ color: isDragOver ? '#1976d2' : '#ffffff' }}>
                 Supports: PDF, DOCX, XLSX, PPTX, TXT, MD, HTML, CSV, PNG, JPG
               </Typography>
               <input
@@ -1425,7 +1428,7 @@ const App: React.FC = () => {
             alignItems: 'center', 
             justifyContent: 'center', 
             height: '100%',
-            color: 'text.secondary'
+            color: '#666666'
           }}>
             <img 
               src={agentIcon} 
@@ -1439,10 +1442,10 @@ const App: React.FC = () => {
                 borderRadius: '50%'
               }} 
             />
-            <Typography variant="h6" gutterBottom>
+            <Typography variant="h6" gutterBottom sx={{ color: '#333333', fontWeight: 600 }}>
               Welcome to Flexible GraphRAG Chat
             </Typography>
-            <Typography variant="body2" textAlign="center">
+            <Typography variant="body2" textAlign="center" sx={{ color: '#555555' }}>
               Ask questions about your documents and get conversational answers.
               <br />
               The AI will provide detailed responses based on your processed documents.
@@ -1590,6 +1593,21 @@ const App: React.FC = () => {
               value={mainTab} 
               onChange={(_, newValue) => setMainTab(newValue)}
               variant="fullWidth"
+              sx={{
+                '& .MuiTab-root': {
+                  fontWeight: 500,
+                  textTransform: 'none',
+                  letterSpacing: '0.5px',
+                },
+                '& .MuiTab-root.Mui-selected': {
+                  backgroundColor: '#1976d2',
+                  color: 'white !important',
+                },
+                '& .MuiTabs-indicator': {
+                  height: 3,
+                  backgroundColor: '#1976d2',
+                },
+              }}
             >
               <Tab label="Sources" value="sources" />
               <Tab label="Processing" value="processing" />

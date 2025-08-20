@@ -1,5 +1,4 @@
 import { Component } from '@angular/core';
-import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-root',
@@ -9,9 +8,18 @@ import { CommonModule } from '@angular/common';
 })
 export class AppComponent {
   title = 'Flexible GraphRAG (Angular)';
+  selectedTabIndex = 0;
+  hasConfiguredSources = false;
+  configuredDataSource = '';
+  configuredFiles: File[] = [];
   
-  onFolderProcessed(event: { dataSource: string, path?: string }): void {
-    console.log('Folder was processed:', event.dataSource, event.path);
-    // You can add any additional logic here when a folder is processed
+  onConfigureProcessing(): void {
+    this.selectedTabIndex = 1; // Switch to Processing tab
+  }
+
+  onSourcesConfigured(data: { dataSource: string; files: File[] }): void {
+    this.hasConfiguredSources = true;
+    this.configuredDataSource = data.dataSource;
+    this.configuredFiles = data.files;
   }
 }

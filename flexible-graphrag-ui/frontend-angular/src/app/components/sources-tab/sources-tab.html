@@ -1,0 +1,125 @@
+<div class="sources-tab-container">
+  <h2>Data Source Configuration</h2>
+  
+  <!-- Data Source Selection -->
+  <mat-form-field appearance="outline" class="full-width">
+    <mat-label>Data Source</mat-label>
+    <mat-select [(value)]="dataSource" (selectionChange)="onDataSourceChange()">
+      <mat-option value="upload">File Upload</mat-option>
+      <mat-option value="cmis">CMIS Repository</mat-option>
+      <mat-option value="alfresco">Alfresco Repository</mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <!-- File Upload -->
+  <div *ngIf="dataSource === 'upload'" class="upload-section">
+    <mat-card 
+      class="drop-zone"
+      [class.drag-over]="isDragOver"
+      [ngStyle]="dropZoneStyle"
+      (drop)="onFileDrop($event)"
+      (dragover)="onDragOver($event)"
+      (dragenter)="onDragEnter($event)"
+      (dragleave)="onDragLeave($event)"
+      (click)="fileInput.click()">
+      <mat-card-content class="drop-zone-content">
+        <h3 [ngStyle]="{ color: isDragOver ? '#1976d2' : '#ffffff' }">
+          Drop files here or click to select
+        </h3>
+        <p [ngStyle]="{ color: isDragOver ? '#1976d2' : '#ffffff' }">
+          Supports: PDF, DOCX, XLSX, PPTX, TXT, MD, HTML, CSV, PNG, JPG
+        </p>
+        <input 
+          #fileInput
+          type="file"
+          multiple
+          accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.html,.csv,.png,.jpg,.jpeg"
+          (change)="onFileSelect($event)"
+          style="display: none">
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Selected Files Display -->
+    <div *ngIf="selectedFiles.length > 0" class="selected-files">
+      <h4>Selected Files ({{ selectedFiles.length }}):</h4>
+      <mat-card *ngFor="let file of selectedFiles; let i = index" class="file-card">
+        <mat-card-content class="file-content">
+          <div class="file-info">
+            <div class="file-name">{{ file.name }}</div>
+            <div class="file-size">{{ formatFileSize(file.size) }}</div>
+          </div>
+          <button mat-button color="warn" (click)="removeFile(i)">
+            Remove
+          </button>
+        </mat-card-content>
+      </mat-card>
+    </div>
+
+    <!-- Upload Progress -->
+    <div *ngIf="isUploading" class="upload-progress">
+      <p>Uploading files... {{ uploadProgress }}%</p>
+      <mat-progress-bar [value]="uploadProgress" mode="determinate"></mat-progress-bar>
+    </div>
+  </div>
+
+  <!-- CMIS Fields -->
+  <div *ngIf="dataSource === 'cmis'" class="cmis-section">
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>CMIS Repository URL</mat-label>
+      <input matInput [(ngModel)]="cmisUrl" [placeholder]="cmisPlaceholder">
+    </mat-form-field>
+    
+    <div class="form-row">
+      <mat-form-field appearance="outline" class="half-width">
+        <mat-label>Username</mat-label>
+        <input matInput [(ngModel)]="cmisUsername">
+      </mat-form-field>
+      
+      <mat-form-field appearance="outline" class="half-width">
+        <mat-label>Password</mat-label>
+        <input matInput type="password" [(ngModel)]="cmisPassword">
+      </mat-form-field>
+    </div>
+    
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Folder Path</mat-label>
+      <input matInput [(ngModel)]="folderPath" placeholder="e.g., /Sites/example/documentLibrary">
+    </mat-form-field>
+  </div>
+
+  <!-- Alfresco Fields -->
+  <div *ngIf="dataSource === 'alfresco'" class="alfresco-section">
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Alfresco Base URL</mat-label>
+      <input matInput [(ngModel)]="alfrescoUrl" [placeholder]="alfrescoPlaceholder">
+    </mat-form-field>
+    
+    <div class="form-row">
+      <mat-form-field appearance="outline" class="half-width">
+        <mat-label>Username</mat-label>
+        <input matInput [(ngModel)]="alfrescoUsername">
+      </mat-form-field>
+      
+      <mat-form-field appearance="outline" class="half-width">
+        <mat-label>Password</mat-label>
+        <input matInput type="password" [(ngModel)]="alfrescoPassword">
+      </mat-form-field>
+    </div>
+    
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Path</mat-label>
+      <input matInput [(ngModel)]="folderPath" placeholder="e.g., /Sites/example/documentLibrary">
+    </mat-form-field>
+  </div>
+
+  <!-- Configure Processing Button -->
+  <div class="action-buttons">
+    <button 
+      mat-raised-button 
+      color="primary" 
+      [disabled]="!isFormValid()"
+          (click)="onConfigureProcessing()">
+      CONFIGURE PROCESSING →
+    </button>
+  </div>
+</div>

@@ -72,6 +72,15 @@ export class ApiService {
     );
   }
 
+  uploadFiles(formData: FormData): Observable<any> {
+    return this.http.post<any>(
+      `${this.apiUrl}/upload`,
+      formData
+    ).pipe(
+      catchError(this.handleError)
+    );
+  }
+
   private handleError(error: HttpErrorResponse) {
     let errorMessage = 'An error occurred';
     if (error.error instanceof ErrorEvent) {

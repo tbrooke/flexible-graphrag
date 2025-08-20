@@ -74,6 +74,17 @@ export interface ProcessingStatusResponse {
   total_files?: number;
   file_progress?: string;
   estimated_time_remaining?: string;
+  // Individual file progress tracking
+  individual_files?: Array<{
+    filename: string;
+    status: string;
+    progress: number;
+    phase: string;
+    message?: string;
+    error?: string;
+    started_at?: string;
+    completed_at?: string;
+  }>;
 }
 
 export interface ProcessFolderResponse extends ApiResponse {}

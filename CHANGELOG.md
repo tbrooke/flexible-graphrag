@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2025-08-20] - Tabbed UI Implementation Across All Frontends
+
+### Added
+- **Vue Frontend Tabbed UI**
+  - Implemented 5-tab navigation: Sources, Processing, Search, Chat, Graph
+  - File upload with drag/drop functionality using Vuetify components
+  - Processing table with checkboxes, progress bars, and bulk operations
+  - Chat interface with auto-scroll and message history
+  - Backend integration with axios for upload/processing/search operations
+
+- **Angular Frontend Tabbed UI**
+  - Implemented 5-tab navigation using Angular Material components
+  - File upload with drag/drop functionality and Material Design styling
+  - Processing table with selection, progress indicators, and bulk operations
+  - Chat interface with auto-scroll and message threading
+  - Backend integration with HttpClient and RxJS Observables
+
+### Fixed
+- **React UI Visual Issues**
+  - Sources tab drag/drop area text changed from gray to white for visibility
+  - Chat tab welcome message text visibility (was white-on-white)
+  - Main tabs updated to blue background theme for consistency
+
+- **Angular Auto-Scroll**
+  - Restructured chat HTML with dedicated scroll-container inside mat-card
+  - Disabled tab slide animations to prevent horizontal sliding in search interface
+
+- **Vue Auto-Scroll**
+  - Fixed v-card component reference using $el fallback for proper DOM access
+
+### Enhanced
+- **UI Consistency**
+  - All button texts standardized to ALL CAPS across frontends
+  - Main tabs use blue backgrounds with white text
+  - Search sub-tabs use underline-only styling
+  - Consistent file upload and processing experiences
+
+- **Cross-Framework Functionality**
+  - Identical file upload with progress tracking in all frontends
+  - Real-time processing status updates and cancellation
+  - Hybrid and Q&A search modes with consistent result formatting
+  - Auto-scrolling chat interfaces with message history
+
 ## [2025-08-18] - Docker Rebuild & Async Event Loop Resolution
 
 ### Fixed

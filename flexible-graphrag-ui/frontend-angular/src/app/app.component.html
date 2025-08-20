@@ -8,15 +8,37 @@
 
   <main class="main-content">
     <div class="container">
-      <div class="header">
-        <h1></h1>
-        <p class="subtitle"></p>
-      </div>
-
-      <div class="content">
-        <app-process-folder (processed)="onFolderProcessed($event)"></app-process-folder>
-        <app-query-form></app-query-form>
-      </div>
+      <mat-card class="main-card">
+        <mat-tab-group [(selectedIndex)]="selectedTabIndex" class="full-width-tabs">
+          <mat-tab label="SOURCES">
+            <app-sources-tab 
+              (configureProcessing)="onConfigureProcessing()"
+              (sourcesConfigured)="onSourcesConfigured($event)">
+            </app-sources-tab>
+          </mat-tab>
+          
+          <mat-tab label="PROCESSING">
+            <app-processing-tab 
+              [hasConfiguredSources]="hasConfiguredSources"
+              [configuredDataSource]="configuredDataSource"
+              [configuredFiles]="configuredFiles"
+              (goToSources)="selectedTabIndex = 0">
+            </app-processing-tab>
+          </mat-tab>
+          
+          <mat-tab label="SEARCH">
+            <app-search-tab></app-search-tab>
+          </mat-tab>
+          
+          <mat-tab label="CHAT">
+            <app-chat-tab></app-chat-tab>
+          </mat-tab>
+          
+          <!-- <mat-tab label="Graph">
+            <app-graph-tab></app-graph-tab>
+          </mat-tab> -->
+        </mat-tab-group>
+      </mat-card>
     </div>
   </main>
 </div>
