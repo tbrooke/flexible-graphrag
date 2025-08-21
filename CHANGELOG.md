@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+
+## [2025-08-21] - Dark/Light Theme Support Implementation
+
+### Added
+- **Comprehensive Theme Switching**
+  - React: Dark theme by default with proper theme persistence
+  - Vue: Light theme by default with proper theme persistence  
+  - Angular: Light theme by default with proper theme persistence
+  - All frontends: localStorage theme preference saving
+
+### Fixed
+- **React Frontend Theme Issues**
+  - Fixed search field white background causing vertical shift and input issues
+  - Updated chat input field styling for proper theme compatibility
+  - Resolved theme-aware input field backgrounds for both light and dark modes
+
+- **Vue Frontend Theme Issues**
+  - Fixed search method picker tabs white background in dark theme
+  - Corrected chat wording from "Press Enter to send or click arrow to send" to "Press Enter or click arrow to send"
+  - Fixed theme switcher layout: slider → icon → text with proper spacing
+  - Improved processing button text visibility during processing
+  - Hidden all processing table paging UI elements
+  - Added visible border for chat area in light mode
+
+- **Angular Frontend Theme Issues**
+  - Implemented complete dark/light theme CSS with Material component overrides
+  - Fixed theme switcher layout and replaced Material slide toggle with custom HTML/CSS widget
+  - Corrected main tabs and search sub-tabs text visibility in dark mode
+  - Fixed app width to expand to full window width like other frontends
+  - Updated button styling: Remove Selected and Clear History buttons now use outlined style
+  - Fixed chat wording to match other frontends
+
+### Technical
+- Added theme-aware CSS for all Material Design components
+- Implemented custom toggle widget to replace stubborn Material slide toggle
+- Applied responsive width across all frontends removing fixed max-width constraints
+- Enhanced dark mode styling with proper contrast ratios for accessibility
+
+---
+
+## [2025-08-20] - Updated with screenshots for the new tab UI, readme updated
+
+### Screenshots Updateed
+- Removed 3 screenshots with old UI design
+- Added screenshots of each of 4 tabs for all 3 clients in /screen-shots/
+
+### Readme Updated
+- Updated readme.md with new screenshots, usage updated for new UI for each of the four tabs
+- Updated LLM usage note about using LlamaIndex with Ollama models and performance issues
+- Updated docker section that new file upload can be used in docker where old filesystem datasource couldn't
+
+
+
 ## [2025-08-20] - Tabbed UI Implementation Across All Frontends
 
 ### Added

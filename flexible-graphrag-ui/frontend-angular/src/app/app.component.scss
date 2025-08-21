@@ -8,15 +8,118 @@
   flex: 1 1 auto;
 }
 
+.theme-switcher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  
+  .theme-icon {
+    color: white;
+  }
+  
+  .theme-text {
+    color: white;
+    margin-right: 8px;
+  }
+  
+  // Custom slide toggle styling - complete override
+  mat-slide-toggle {
+    ::ng-deep .mdc-switch {
+      // Track (background) - both states
+      .mdc-switch__track {
+        background-color: rgba(255, 255, 255, 0.3) !important;
+        border-color: rgba(255, 255, 255, 0.3) !important;
+        opacity: 1 !important;
+      }
+      
+      // Thumb (circle) - remove all icons and styling
+      .mdc-switch__handle {
+        .mdc-switch__shadow {
+          box-shadow: none !important;
+        }
+        
+        .mdc-switch__ripple {
+          display: none !important;
+        }
+        
+        .mdc-switch__focus-ring {
+          display: none !important;
+        }
+      }
+      
+      .mdc-switch__thumb {
+        background-color: white !important;
+        border-color: white !important;
+        border: none !important;
+        
+        // Remove all icons (checkmark, minus, etc.)
+        .mdc-switch__icons {
+          display: none !important;
+        }
+        
+        .mdc-switch__icon {
+          display: none !important;
+        }
+      }
+      
+      // When checked (light mode) - override all Material colors
+      &.mdc-switch--selected {
+        .mdc-switch__track {
+          background-color: rgba(255, 255, 255, 0.5) !important;
+          border-color: rgba(255, 255, 255, 0.5) !important;
+          opacity: 1 !important;
+        }
+        
+        .mdc-switch__thumb {
+          background-color: white !important;
+          border-color: white !important;
+          border: none !important;
+          
+          .mdc-switch__icons {
+            display: none !important;
+          }
+          
+          .mdc-switch__icon {
+            display: none !important;
+          }
+        }
+      }
+      
+      // Override any Material theme colors
+      &.mat-accent {
+        .mdc-switch__track {
+          background-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        
+        &.mdc-switch--selected .mdc-switch__track {
+          background-color: rgba(255, 255, 255, 0.5) !important;
+        }
+      }
+    }
+  }
+}
+
+// Toolbar theme colors
+.dark-toolbar {
+  background-color: #424242 !important; // Gray like React/Vue
+  color: white !important;
+}
+
+.light-toolbar {
+  background-color: #1976d2 !important; // Blue for light mode
+  color: white !important;
+}
+
 .main-content {
   flex: 1;
   padding: 2rem;
 }
 
 .container {
-  max-width: 1200px;
   margin: 0 auto;
   width: 100%;
+  max-width: none; // Remove width constraint to match Vue's fluid approach
+  padding: 0 16px;
 }
 
 .main-card {
@@ -42,6 +145,14 @@
   letter-spacing: 0.5px;
 }
 
+.full-width-tabs ::ng-deep .mat-mdc-tab:not(.mdc-tab--active) {
+  color: #666666; // Default for light mode
+}
+
+.full-width-tabs ::ng-deep .mat-mdc-tab:not(.mdc-tab--active) .mdc-tab__text-label {
+  color: #666666; // Default for light mode
+}
+
 .full-width-tabs ::ng-deep .mat-mdc-tab.mdc-tab--active {
   background-color: #1976d2;
   color: white !important;
@@ -59,5 +170,108 @@
 @media (max-width: 768px) {
   .main-content {
     padding: 1rem;
+  }
+}
+
+// Theme support
+:host ::ng-deep .light-theme {
+  background-color: #fafafa;
+  color: #333333;
+  
+  // Light theme tab colors
+  .mat-mdc-tab:not(.mdc-tab--active) {
+    color: #666666 !important;
+  }
+}
+
+:host ::ng-deep .dark-theme {
+  background-color: #121212;
+  color: #ffffff;
+  
+  .mat-mdc-card {
+    background-color: #1e1e1e;
+    color: #ffffff;
+  }
+  
+  .mat-mdc-form-field {
+    .mat-mdc-text-field-wrapper {
+      background-color: #2d2d2d;
+    }
+  }
+  
+  .mat-mdc-table {
+    background-color: #1e1e1e;
+    color: #ffffff;
+  }
+  
+  .mat-mdc-header-cell {
+    color: #ffffff;
+  }
+  
+  .mat-mdc-cell {
+    color: #ffffff;
+  }
+  
+  // Dark theme tab colors - make non-selected tabs visible
+  .mat-mdc-tab:not(.mdc-tab--active) {
+    color: #9e9e9e !important;
+  }
+  
+  .mat-mdc-tab:not(.mdc-tab--active) .mdc-tab__text-label {
+    color: #9e9e9e !important;
+  }
+  
+  // Dark theme main tabs
+  .full-width-tabs .mat-mdc-tab:not(.mdc-tab--active) {
+    color: #9e9e9e !important;
+  }
+  
+  .full-width-tabs .mat-mdc-tab:not(.mdc-tab--active) .mdc-tab__text-label {
+    color: #9e9e9e !important;
+  }
+}
+
+// Custom toggle widget - complete control over styling
+.custom-toggle {
+  cursor: pointer;
+  display: inline-block;
+  
+  .toggle-track {
+    width: 36px;
+    height: 20px;
+    background-color: #616161; // Dark gray for dark mode (unchecked)
+    border-radius: 10px;
+    position: relative;
+    transition: background-color 0.3s ease;
+    
+    // Light mode unchecked
+    .light-theme & {
+      background-color: #e0e0e0; // Light gray for light mode (unchecked)
+    }
+    
+    // Checked state colors
+    &.checked {
+      background-color: #9e9e9e; // Light gray for dark mode (checked)
+      
+      .light-theme & {
+        background-color: #0d47a1; // Very dark blue for light mode (high contrast with white circle)
+      }
+    }
+  }
+  
+  .toggle-thumb {
+    width: 16px;
+    height: 16px;
+    background-color: white;
+    border-radius: 50%;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+    
+    // Checked state - move thumb to right
+    &.checked {
+      transform: translateX(16px);
+    }
   }
 }

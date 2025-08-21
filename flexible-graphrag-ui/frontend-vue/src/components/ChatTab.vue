@@ -4,13 +4,6 @@
     <div class="d-flex justify-space-between align-center mb-4">
       <h2>Chat Interface</h2>
       <div class="d-flex align-center ga-2">
-        <v-chip
-          prepend-icon="mdi-chat-question"
-          color="primary"
-          variant="outlined"
-        >
-          Q&A Mode
-        </v-chip>
         <v-btn
           variant="outlined"
           size="small"
@@ -25,8 +18,7 @@
     <!-- Chat Messages -->
     <v-card
       ref="chatContainer"
-      class="flex-grow-1 pa-4 mb-4 overflow-y-auto"
-      color="grey-lighten-5"
+      class="flex-grow-1 pa-4 mb-4 overflow-y-auto chat-messages-card"
       variant="outlined"
     >
       <!-- Welcome Message -->
@@ -137,8 +129,7 @@
 
     <!-- Help Text -->
     <p class="text-caption text-medium-emphasis text-center mt-2">
-      Press Enter to send, Shift+Enter for new line • 
-      Q&A mode: Provides conversational answers
+      Press Enter or click arrow to send a Q&A Query, which provides a conversational answer, Shift+Enter for new line
     </p>
 
     <!-- Error Message -->
@@ -335,5 +326,16 @@ export default defineComponent({
 
 .flex-grow-1 {
   flex-grow: 1;
+}
+
+.chat-messages-card {
+  background-color: #f8f9fa !important; /* Light gray background for light mode */
+  border: 1px solid #dee2e6 !important; /* Visible border in light mode */
+}
+
+/* Dark theme styling */
+.v-theme--dark .chat-messages-card {
+  background-color: #2d2d2d !important; /* Dark background for dark mode */
+  border: 1px solid #424242 !important; /* Visible border in dark mode */
 }
 </style>

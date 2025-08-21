@@ -1,6 +1,61 @@
 /* You can add global styles to this file, and also import other style files */
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
 
+// Dark theme styles
+.dark-theme {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+  
+  // Material components dark theme overrides
+  .mat-mdc-card {
+    background-color: #1e1e1e !important;
+    color: #ffffff !important;
+  }
+  
+  .mat-mdc-form-field {
+    .mat-mdc-text-field-wrapper {
+      background-color: #2d2d2d !important;
+    }
+    
+    .mat-mdc-form-field-label {
+      color: #cccccc !important;
+    }
+    
+    input, textarea {
+      color: #ffffff !important;
+    }
+  }
+  
+  .mat-mdc-table {
+    background-color: #1e1e1e !important;
+    color: #ffffff !important;
+  }
+  
+  .mat-mdc-header-cell {
+    background-color: #2d2d2d !important;
+    color: #ffffff !important;
+  }
+  
+  .mat-mdc-cell {
+    color: #ffffff !important;
+  }
+  
+  .mat-mdc-row:hover {
+    background-color: #2d2d2d !important;
+  }
+}
+
+// Light theme styles (default)
+.light-theme {
+  background-color: #fafafa !important;
+  color: #333333 !important;
+  
+  .mat-mdc-card {
+    background-color: #ffffff !important;
+    color: #333333 !important;
+  }
+}
+
 // Global styles
 html, body {
   height: 100%;
@@ -34,9 +89,10 @@ body {
 .text-center { text-align: center; }
 
 .container {
-  max-width: 1200px;
+  max-width: none; // Remove width constraint for responsive full-width layout
   margin: 0 auto;
   padding: 20px;
+  width: 100%;
 }
 
 // Snackbar styles
@@ -63,9 +119,10 @@ body {
   padding: 2rem 0;
   
   .container {
-    max-width: 1200px;
+    max-width: none; // Full width like Vue
     margin: 0 auto;
     padding: 0 1rem;
+    width: 100%;
   }
   
   .header {
@@ -109,4 +166,89 @@ body {
       }
     }
   }
+}
+
+// Nuclear option: Maximum specificity theme switcher override
+html body div.app-container mat-toolbar.dark-toolbar .theme-switcher mat-slide-toggle .mdc-switch,
+html body div.app-container mat-toolbar.light-toolbar .theme-switcher mat-slide-toggle .mdc-switch,
+html body .app-container .theme-switcher mat-slide-toggle .mdc-switch {
+  
+  // CSS Custom Properties for dynamic theming
+  --switch-track-color: #616161;
+  --switch-track-selected-color: #9e9e9e;
+  --switch-thumb-color: #ffffff;
+  
+  // Hide all icons with maximum force
+  .mdc-switch__icons,
+  .mdc-switch__icon,
+  .mdc-switch__thumb svg,
+  .mdc-switch__thumb path,
+  .mdc-switch__thumb .mdc-switch__icon {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+  
+  // Force thumb styling
+  .mdc-switch__thumb {
+    background: var(--switch-thumb-color) !important;
+    background-color: var(--switch-thumb-color) !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  
+  // Force track styling
+  .mdc-switch__track {
+    background: var(--switch-track-color) !important;
+    background-color: var(--switch-track-color) !important;
+    border-color: var(--switch-track-color) !important;
+    opacity: 1 !important;
+  }
+  
+  // Selected state
+  &.mdc-switch--selected {
+    .mdc-switch__track {
+      background: var(--switch-track-selected-color) !important;
+      background-color: var(--switch-track-selected-color) !important;
+      border-color: var(--switch-track-selected-color) !important;
+    }
+    
+    .mdc-switch__thumb {
+      background: var(--switch-thumb-color) !important;
+      background-color: var(--switch-thumb-color) !important;
+    }
+  }
+}
+
+// Light theme color variables
+.light-theme {
+  .theme-switcher mat-slide-toggle .mdc-switch {
+    --switch-track-color: #e0e0e0 !important;
+    --switch-track-selected-color: #1976d2 !important;
+    --switch-thumb-color: #ffffff !important;
+  }
+}
+
+// Dark theme color variables
+.dark-theme {
+  .theme-switcher mat-slide-toggle .mdc-switch {
+    --switch-track-color: #616161 !important;
+    --switch-track-selected-color: #9e9e9e !important;
+    --switch-thumb-color: #ffffff !important;
+  }
+}
+
+// Additional brute force overrides for stubborn Material styles
+.mat-slide-toggle .mdc-switch__track {
+  background-color: var(--switch-track-color, #616161) !important;
+}
+
+.mat-slide-toggle.mat-checked .mdc-switch__track {
+  background-color: var(--switch-track-selected-color, #9e9e9e) !important;
+}
+
+.mat-slide-toggle .mdc-switch__thumb {
+  background-color: var(--switch-thumb-color, #ffffff) !important;
 }

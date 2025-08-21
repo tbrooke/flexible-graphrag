@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -16,6 +18,12 @@ import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import TabPanel from '@mui/lab/TabPanel';
 import TabContext from '@mui/lab/TabContext';
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
 
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -32,13 +40,72 @@ import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 import agentIcon from './agent.png';
 
-import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
+
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 
 import Avatar from '@mui/material/Avatar';
 import Divider from '@mui/material/Divider';
 import axios from 'axios';
+
+// Theme definitions
+const lightTheme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: {
+      main: '#1976d2',
+      light: '#e3f2fd',
+      contrastText: '#ffffff',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+    success: {
+      main: '#4caf50',
+    },
+    background: {
+      default: '#fafafa',
+      paper: '#ffffff',
+    },
+    text: {
+      primary: '#333333',
+      secondary: '#555555',
+    },
+    divider: '#e0e0e0',
+    action: {
+      hover: '#f5f5f5',
+    },
+  },
+});
+
+const darkTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#1976d2',
+      light: '#42a5f5',
+      contrastText: '#ffffff',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+    success: {
+      main: '#4caf50',
+    },
+    background: {
+      default: '#121212',
+      paper: '#1e1e1e',
+    },
+    text: {
+      primary: '#ffffff',
+      secondary: '#cccccc',
+    },
+    divider: '#424242',
+    action: {
+      hover: '#2d2d2d',
+    },
+  },
+});
 
 interface IngestRequest {
   data_source: string;
@@ -121,6 +188,19 @@ interface ChatMessage {
 }
 
 const App: React.FC = () => {
+  // Theme state
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('theme-mode');
+    return saved ? saved === 'dark' : true; // Default to dark mode like current
+  });
+
+  // Update localStorage when theme changes
+  useEffect(() => {
+    localStorage.setItem('theme-mode', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
+
+  const currentTheme = isDarkMode ? darkTheme : lightTheme;
+
   // Default values
   const defaultFolderPath = import.meta.env.VITE_PROCESS_FOLDER_PATH || '/Shared/GraphRAG';
   
@@ -471,6 +551,26 @@ const App: React.FC = () => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const removeProcessingFile = (index: number) => {
+    if (configuredDataSource === 'upload') {
+      // Remove from configured files
+      setConfiguredFiles(prev => prev.filter((_, i) => i !== index));
+      // Also remove from selected files if they match
+      setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+      // Update selected indices - remove the index and shift down higher indices
+      const newSelected = new Set<number>();
+      selectedFileIndices.forEach(i => {
+        if (i < index) {
+          newSelected.add(i);
+        } else if (i > index) {
+          newSelected.add(i - 1);
+        }
+        // Skip i === index (the removed file)
+      });
+      setSelectedFileIndices(newSelected);
+    }
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) {
       // Windows-style: anything under 1KB shows as "1 KB" (rounded up)
@@ -612,9 +712,9 @@ const App: React.FC = () => {
     const files = statusData?.individual_files || lastStatusData?.individual_files || [];
     
     // Debug logging in development
-    if (process.env.NODE_ENV === 'development' && files.length > 0) {
+    if (import.meta.env.DEV && files.length > 0) {
       console.log('🔍 Looking for progress data for:', filename);
-      console.log('📋 Available progress files:', files.map(f => f.filename));
+      console.log('📋 Available progress files:', files.map((f: any) => f.filename));
       console.log('📁 Current display files:', getDisplayFiles().map(f => f.name));
     }
     
@@ -634,7 +734,7 @@ const App: React.FC = () => {
       );
     }
     
-    if (process.env.NODE_ENV === 'development') {
+    if (import.meta.env.DEV) {
       console.log('✅ Progress match for', filename, ':', match ? `Found (${match.progress}% - ${match.phase})` : 'NOT FOUND');
     }
     
@@ -789,18 +889,18 @@ const App: React.FC = () => {
           <Box sx={{ mb: 2 }}>
             <Box
               sx={{
-                border: isDragOver ? '2px solid #1976d2' : '2px dashed #ccc',
+                border: isDragOver ? `2px solid ${currentTheme.palette.primary.main}` : `2px dashed ${currentTheme.palette.divider}`,
                 borderRadius: 2,
                 p: 3,
                 textAlign: 'center',
                 cursor: 'pointer',
-                backgroundColor: isDragOver ? '#e3f2fd' : '#1976d2',
+                backgroundColor: isDragOver ? currentTheme.palette.primary.light : currentTheme.palette.primary.main,
                 transition: 'all 0.2s ease-in-out',
                 '&:hover': {
-                  borderColor: isDragOver ? '#1976d2' : '#999',
-                  backgroundColor: isDragOver ? '#e3f2fd' : '#f9f9f9',
+                  borderColor: isDragOver ? currentTheme.palette.primary.main : currentTheme.palette.text.secondary,
+                  backgroundColor: isDragOver ? currentTheme.palette.primary.light : currentTheme.palette.background.default,
                   '& .MuiTypography-root': {
-                    color: isDragOver ? '#1976d2' : '#333333'
+                    color: isDragOver ? currentTheme.palette.primary.main : currentTheme.palette.text.primary
                   }
                 }
               }}
@@ -810,10 +910,10 @@ const App: React.FC = () => {
               onDragLeave={handleDragLeave}
               onClick={() => document.getElementById('file-input')?.click()}
             >
-              <Typography variant="h6" gutterBottom sx={{ color: isDragOver ? '#1976d2' : '#ffffff' }}>
+              <Typography variant="h6" gutterBottom sx={{ color: isDragOver ? currentTheme.palette.primary.main : currentTheme.palette.primary.contrastText }}>
                 Drop files here or click to select
               </Typography>
-              <Typography variant="body2" sx={{ color: isDragOver ? '#1976d2' : '#ffffff' }}>
+              <Typography variant="body2" sx={{ color: isDragOver ? currentTheme.palette.primary.main : currentTheme.palette.primary.contrastText }}>
                 Supports: PDF, DOCX, XLSX, PPTX, TXT, MD, HTML, CSV, PNG, JPG
               </Typography>
               <input
@@ -838,7 +938,7 @@ const App: React.FC = () => {
                     alignItems: 'center', 
                     justifyContent: 'space-between',
                     p: 1,
-                    border: '1px solid #e0e0e0',
+                    border: `1px solid ${currentTheme.palette.divider}`,
                     borderRadius: 1,
                     mb: 1
                   }}>
@@ -981,8 +1081,8 @@ const App: React.FC = () => {
           size="small"
         >
           <MenuItem value="upload">File Upload</MenuItem>
-          <MenuItem value="cmis">CMIS Repository</MenuItem>
           <MenuItem value="alfresco">Alfresco Repository</MenuItem>
+          <MenuItem value="cmis">CMIS Repository</MenuItem>
         </Select>
       </FormControl>
       
@@ -1021,11 +1121,11 @@ const App: React.FC = () => {
       
       {/* Show prompt only when not configured */}
       {!hasConfiguredSources && (
-        <Paper sx={{ p: 3, mb: 3, textAlign: 'center', bgcolor: '#e8f4fd', border: '1px solid #b3d9ff' }}>
-          <Typography variant="h6" sx={{ color: '#333333', fontWeight: 600 }} gutterBottom>
+        <Paper sx={{ p: 3, mb: 3, textAlign: 'center', bgcolor: currentTheme.palette.primary.light, border: `1px solid ${currentTheme.palette.primary.main}` }}>
+          <Typography variant="h6" sx={{ color: currentTheme.palette.text.primary, fontWeight: 600 }} gutterBottom>
             No Data Source Configured
           </Typography>
-          <Typography variant="body2" sx={{ color: '#555555', mb: 2 }}>
+          <Typography variant="body2" sx={{ color: currentTheme.palette.text.secondary, mb: 2 }}>
             Please go to the Sources tab to configure your data source first.
           </Typography>
           <Button
@@ -1054,7 +1154,7 @@ const App: React.FC = () => {
                 <TableCell sx={{ width: 200 }}>Filename</TableCell>
                 <TableCell sx={{ width: 100 }}>File Size</TableCell>
                 <TableCell sx={{ minWidth: 400 }}>Progress</TableCell>
-                <TableCell sx={{ width: 50 }}>×</TableCell>
+                <TableCell sx={{ width: 50 }}></TableCell>
                 <TableCell sx={{ width: 100 }}>Status</TableCell>
 
               </TableRow>
@@ -1092,7 +1192,7 @@ const App: React.FC = () => {
                               width: '100%',
                               height: 8,
                               borderRadius: 4,
-                              backgroundColor: '#e0e0e0',
+                              backgroundColor: currentTheme.palette.action.hover,
                               position: 'relative',
                               overflow: 'hidden'
                             }}
@@ -1101,14 +1201,14 @@ const App: React.FC = () => {
                               sx={{
                                 width: `${Math.max(progressData?.progress || 0, 2)}%`, // Always show at least 2%
                                 height: '100%',
-                                backgroundColor: '#1976d2',
+                                backgroundColor: currentTheme.palette.primary.main,
                                 borderRadius: 4,
                                 transition: 'width 0.3s ease'
                               }}
                             />
                           </Box>
                         </Box>
-                        <Typography variant="caption" sx={{ minWidth: 100, ml: 1, color: '#333333' }}>
+                        <Typography variant="caption" sx={{ minWidth: 100, ml: 1, color: currentTheme.palette.text.primary }}>
                           {progressData?.progress || 0}% - {getPhaseDisplayName(progressData?.phase || 'ready')}
 
                         </Typography>
@@ -1118,7 +1218,7 @@ const App: React.FC = () => {
                       {file.type === 'file' ? (
                         <IconButton
                           size="small"
-                          onClick={() => removeFile(index)}
+                          onClick={() => removeProcessingFile(index)}
                           color="error"
                         >
                           <CloseIcon fontSize="small" />
@@ -1227,7 +1327,7 @@ const App: React.FC = () => {
           sx={{ 
             minWidth: 'auto', 
             color: 'transparent',
-            '&:hover': { color: '#666' }
+            '&:hover': { color: currentTheme.palette.text.secondary }
           }}
           title="Double-click to toggle debug panel"
         >
@@ -1240,12 +1340,12 @@ const App: React.FC = () => {
         <Box sx={{ 
           mt: 2, 
           p: 2, 
-          bgcolor: '#2d3748', 
-          border: '1px solid #4a5568',
+          bgcolor: isDarkMode ? '#2d3748' : '#f5f5f5', 
+          border: `1px solid ${currentTheme.palette.divider}`,
           borderRadius: 1,
           fontSize: '0.8rem', 
           fontFamily: 'monospace',
-          color: '#ffffff'
+          color: currentTheme.palette.text.primary
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <strong>Debug Status Data {!statusData && lastStatusData ? '(LAST STATUS)' : '(CURRENT)'}:</strong>
@@ -1263,9 +1363,9 @@ const App: React.FC = () => {
               style={{ 
                 fontSize: '0.7rem', 
                 padding: '2px 6px', 
-                backgroundColor: '#4a5568', 
-                color: 'white', 
-                border: '1px solid #718096',
+                backgroundColor: currentTheme.palette.action.hover, 
+                color: currentTheme.palette.text.primary, 
+                border: `1px solid ${currentTheme.palette.divider}`,
                 borderRadius: '3px',
                 cursor: 'pointer'
               }}
@@ -1276,8 +1376,8 @@ const App: React.FC = () => {
           <pre style={{ 
             fontSize: '0.7rem', 
             margin: '4px 0', 
-            backgroundColor: '#1a202c',
-            color: '#e2e8f0',
+            backgroundColor: isDarkMode ? '#1a202c' : '#ffffff',
+            color: currentTheme.palette.text.primary,
             padding: '8px',
             borderRadius: '4px',
             overflow: 'auto',
@@ -1328,10 +1428,24 @@ const App: React.FC = () => {
               ? 'e.g., machine learning algorithms' 
               : 'e.g., What are the key findings?'
             }
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                backgroundColor: currentTheme.palette.background.paper,
+                '& fieldset': {
+                  borderColor: currentTheme.palette.divider,
+                },
+                '&:hover fieldset': {
+                  borderColor: currentTheme.palette.primary.main,
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: currentTheme.palette.primary.main,
+                }
+              }
+            }}
           />
           <Button
             variant="contained"
-            color="secondary"
+            color="primary"
             onClick={handleSearch}
             disabled={isQuerying || !question.trim()}
             sx={{ minWidth: 150 }}
@@ -1385,19 +1499,13 @@ const App: React.FC = () => {
   );
 
   const renderChatTab = () => (
-    <Box sx={{ p: 3, height: 'calc(100vh - 200px)', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ p: 3, height: '600px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">
           Chat Interface
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <Chip
-            icon={<QuestionAnswerIcon />}
-            label="Q&A Mode"
-            color="primary"
-            variant="outlined"
-          />
           <Button
             variant="outlined"
             size="small"
@@ -1417,8 +1525,10 @@ const App: React.FC = () => {
           p: 2, 
           mb: 2, 
           overflowY: 'auto',
-          bgcolor: '#f8f9fa',
-          border: '1px solid #e0e0e0'
+          bgcolor: isDarkMode ? '#2d2d2d' : '#f8f9fa',
+          border: `1px solid ${currentTheme.palette.divider}`,
+          maxHeight: '400px',
+          minHeight: '300px'
         }}
       >
         {chatMessages.length === 0 ? (
@@ -1428,7 +1538,7 @@ const App: React.FC = () => {
             alignItems: 'center', 
             justifyContent: 'center', 
             height: '100%',
-            color: '#666666'
+            color: currentTheme.palette.text.secondary
           }}>
             <img 
               src={agentIcon} 
@@ -1442,10 +1552,10 @@ const App: React.FC = () => {
                 borderRadius: '50%'
               }} 
             />
-            <Typography variant="h6" gutterBottom sx={{ color: '#333333', fontWeight: 600 }}>
+            <Typography variant="h6" gutterBottom sx={{ color: currentTheme.palette.text.primary, fontWeight: 600 }}>
               Welcome to Flexible GraphRAG Chat
             </Typography>
-            <Typography variant="body2" textAlign="center" sx={{ color: '#555555' }}>
+            <Typography variant="body2" textAlign="center" sx={{ color: currentTheme.palette.text.secondary }}>
               Ask questions about your documents and get conversational answers.
               <br />
               The AI will provide detailed responses based on your processed documents.
@@ -1466,7 +1576,7 @@ const App: React.FC = () => {
                 >
                   <Avatar 
                     sx={{ 
-                      bgcolor: message.type === 'user' ? '#1976d2' : '#4caf50',
+                      bgcolor: message.type === 'user' ? currentTheme.palette.primary.main : currentTheme.palette.success.main,
                       mx: 1,
                       width: 32,
                       height: 32
@@ -1490,11 +1600,11 @@ const App: React.FC = () => {
                   
                   <Box sx={{ 
                     maxWidth: message.type === 'user' ? '70%' : '80%',
-                    bgcolor: message.type === 'user' ? '#e3f2fd' : '#ffffff',
+                    bgcolor: message.type === 'user' ? currentTheme.palette.primary.light : currentTheme.palette.background.paper,
                     borderRadius: 2,
                     p: 2,
-                    border: '1px solid #e0e0e0',
-                    color: '#000000'
+                    border: `1px solid ${currentTheme.palette.divider}`,
+                    color: currentTheme.palette.text.primary
                   }}>
                     {message.isLoading ? (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1510,7 +1620,7 @@ const App: React.FC = () => {
                         </Typography>
 
                         
-                        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#333333', fontWeight: 500 }}>
+                        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: currentTheme.palette.text.secondary, fontWeight: 500 }}>
                           {message.timestamp.toLocaleTimeString()}
                         </Typography>
                       </>
@@ -1544,7 +1654,17 @@ const App: React.FC = () => {
           disabled={isQuerying}
           sx={{ 
             '& .MuiOutlinedInput-root': {
-              borderRadius: 2
+              borderRadius: 2,
+              backgroundColor: currentTheme.palette.background.paper,
+              '& fieldset': {
+                borderColor: currentTheme.palette.divider,
+              },
+              '&:hover fieldset': {
+                borderColor: currentTheme.palette.primary.main,
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: currentTheme.palette.primary.main,
+              }
             }
           }}
         />
@@ -1570,8 +1690,7 @@ const App: React.FC = () => {
       </Box>
       
       <Typography variant="caption" color="text.secondary" sx={{ mt: 1, textAlign: 'center' }}>
-        Press Enter to send, Shift+Enter for new line • 
-        Q&A mode: Provides conversational answers
+        Press Enter or click arrow to send a Q&A Query, which provides a conversational answer, Shift+Enter for new line
       </Typography>
     </Box>
   );
@@ -1579,14 +1698,33 @@ const App: React.FC = () => {
 
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" component="h1" gutterBottom>
-          Flexible GraphRAG (React)
-        </Typography>
-      </Box>
+    <ThemeProvider theme={currentTheme}>
+      <CssBaseline />
+      <AppBar position="static" color="primary">
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            Flexible GraphRAG (React)
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={!isDarkMode}
+                onChange={(e) => setIsDarkMode(!e.target.checked)}
+                color="default"
+              />
+            }
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {isDarkMode ? <DarkModeIcon /> : <LightModeIcon />}
+                {isDarkMode ? 'Dark' : 'Light'}
+              </Box>
+            }
+          />
+        </Toolbar>
+      </AppBar>
 
-      <Paper sx={{ mb: 4 }} elevation={3}>
+      <Container maxWidth={false} sx={{ py: 4, px: 2 }}>
+        <Paper sx={{ mb: 4 }} elevation={3}>
         <TabContext value={mainTab}>
           <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
             <Tabs 
@@ -1600,12 +1738,12 @@ const App: React.FC = () => {
                   letterSpacing: '0.5px',
                 },
                 '& .MuiTab-root.Mui-selected': {
-                  backgroundColor: '#1976d2',
+                  backgroundColor: currentTheme.palette.primary.main,
                   color: 'white !important',
                 },
                 '& .MuiTabs-indicator': {
                   height: 3,
-                  backgroundColor: '#1976d2',
+                  backgroundColor: currentTheme.palette.primary.main,
                 },
               }}
             >
@@ -1639,12 +1777,13 @@ const App: React.FC = () => {
         </TabContext>
       </Paper>
       
-      {error && (
-        <Alert severity="error" sx={{ mt: 2 }}>
-          {error}
-        </Alert>
-      )}
-    </Container>
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
+      </Container>
+    </ThemeProvider>
   );
 };
 

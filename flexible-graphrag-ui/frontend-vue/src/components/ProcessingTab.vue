@@ -32,6 +32,10 @@
         density="compact"
         :items-per-page="-1"
         hide-default-footer
+        disable-pagination
+        :footer-props="{ 'items-per-page-options': [] }"
+        :hide-default-header="false"
+        :show-current-page="false"
       >
         <!-- Filename column -->
         <template #item.name="{ item }">
@@ -148,7 +152,6 @@
         color="primary"
         size="large"
         :disabled="!canStartProcessing"
-        :loading="isProcessing"
         @click="startProcessing"
       >
         {{ getProcessingButtonText }}
@@ -286,7 +289,7 @@ export default defineComponent({
       { title: 'Filename', key: 'name', width: '200px' },
       { title: 'File Size', key: 'size', width: '100px' },
       { title: 'Progress', key: 'progress', width: '400px', sortable: false },
-      { title: '×', key: 'remove', width: '50px', sortable: false, align: 'center' },
+      { title: '', key: 'remove', width: '50px', sortable: false, align: 'center' },
       { title: 'Status', key: 'status', width: '100px' },
     ];
 
@@ -394,8 +397,19 @@ export default defineComponent({
     };
 
     const removeFile = (index: number) => {
-      // Remove file logic here
-      console.log('Remove file at index:', index);
+      if (props.configuredDataSource === 'upload') {
+        // Remove from configured files
+        const newFiles = [...props.configuredFiles];
+        newFiles.splice(index, 1);
+        // Emit event to parent to update configured files
+        emit('files-removed', newFiles);
+        
+        // Update selected indices - remove the index and shift down higher indices
+        const newSelected = selectedItems.value
+          .filter(i => i !== index)
+          .map(i => i > index ? i - 1 : i);
+        selectedItems.value = newSelected;
+      }
     };
 
     const removeSelectedFiles = () => {
@@ -638,5 +652,22 @@ export default defineComponent({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Hide all data table footer elements */
+:deep(.v-data-table-footer) {
+  display: none !important;
+}
+
+:deep(.v-data-table__footer) {
+  display: none !important;
+}
+
+:deep(.v-pagination) {
+  display: none !important;
+}
+
+:deep(.v-data-footer) {
+  display: none !important;
 }
 </style>

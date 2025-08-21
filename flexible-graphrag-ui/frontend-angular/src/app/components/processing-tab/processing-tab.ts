@@ -180,8 +180,26 @@ export class ProcessingTabComponent implements OnInit, OnChanges {
   }
 
   removeFile(index: number): void {
-    console.log('Remove file at index:', index);
-    // Implementation would remove the file from the list
+    if (this.configuredDataSource === 'upload') {
+      // Remove from configured files
+      const newFiles = [...this.configuredFiles];
+      newFiles.splice(index, 1);
+      
+      // Update selected indices - remove the index and shift down higher indices
+      const newSelected = new Set<number>();
+      this.selectedItems.forEach(i => {
+        if (i < index) {
+          newSelected.add(i);
+        } else if (i > index) {
+          newSelected.add(i - 1);
+        }
+        // Skip i === index (the removed file)
+      });
+      this.selectedItems = newSelected;
+      
+      // Note: In a real implementation, you'd emit an event to update the parent component
+      console.log('File removed at index:', index, 'New files:', newFiles);
+    }
   }
 
   removeSelectedFiles(): void {

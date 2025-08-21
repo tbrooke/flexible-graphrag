@@ -172,8 +172,8 @@ export default defineComponent({
     // Data source options
     const dataSourceOptions = [
       { title: 'File Upload', value: 'upload' },
-      { title: 'CMIS Repository', value: 'cmis' },
       { title: 'Alfresco Repository', value: 'alfresco' },
+      { title: 'CMIS Repository', value: 'cmis' },
     ];
 
     // State

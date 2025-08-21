@@ -193,3 +193,16 @@
   border-radius: 4px;
   margin-top: 16px;
 }
+
+// Clear History button styling
+.clear-history-button {
+  // Light mode: black border and text
+  border-color: #333333 !important;
+  color: #333333 !important;
+}
+
+// Dark mode: white border and text
+:host-context(.dark-theme) .clear-history-button {
+  border-color: #ffffff !important;
+  color: #ffffff !important;
+}

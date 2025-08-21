@@ -1,7 +1,18 @@
 <template>
-  <v-app>
-    <v-app-bar app color="primary" dark>
+  <v-app :theme="currentTheme">
+    <v-app-bar app :color="isDarkMode ? 'grey-darken-3' : 'primary'" dark>
       <v-toolbar-title>Flexible GraphRAG (Vue)</v-toolbar-title>
+      <v-spacer></v-spacer>
+      <div class="d-flex align-center ga-3">
+        <v-switch
+          v-model="isLightMode"
+          color="white"
+          hide-details
+          inset
+        ></v-switch>
+        <v-icon>{{ isDarkMode ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
+        <span class="text-white mr-2">{{ isDarkMode ? 'Dark' : 'Light' }}</span>
+      </div>
     </v-app-bar>
 
     <v-main>
@@ -11,7 +22,7 @@
             v-model="mainTab" 
             grow 
             color="primary"
-            bg-color="grey-lighten-4"
+            :bg-color="isDarkMode ? 'grey-darken-4' : 'grey-lighten-4'"
             slider-color="primary"
             class="custom-tabs">
             <v-tab value="sources">SOURCES</v-tab>
@@ -65,7 +76,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue';
+import { defineComponent, ref, computed, watch } from 'vue';
 import SourcesTab from './components/SourcesTab.vue';
 import ProcessingTab from './components/ProcessingTab.vue';
 import SearchTab from './components/SearchTab.vue';
@@ -85,6 +96,26 @@ export default defineComponent({
     const configuredDataSource = ref('');
     const configuredFiles = ref<File[]>([]);
 
+    // Theme management
+    const isDarkMode = ref(() => {
+      const saved = localStorage.getItem('vue-theme-mode');
+      return saved ? saved === 'dark' : false; // Default to light mode for Vue
+    });
+
+    const isLightMode = computed({
+      get: () => !isDarkMode.value,
+      set: (value) => {
+        isDarkMode.value = !value;
+      }
+    });
+
+    const currentTheme = computed(() => isDarkMode.value ? 'dark' : 'light');
+
+    // Watch for theme changes and persist to localStorage
+    watch(isDarkMode, (newValue) => {
+      localStorage.setItem('vue-theme-mode', newValue ? 'dark' : 'light');
+    }, { immediate: true });
+
     const onConfigureProcessing = () => {
       mainTab.value = 'processing';
     };
@@ -102,6 +133,9 @@ export default defineComponent({
       configuredFiles,
       onConfigureProcessing,
       onSourcesConfigured,
+      isDarkMode,
+      isLightMode,
+      currentTheme,
     };
   },
 });
@@ -127,5 +161,14 @@ export default defineComponent({
 
 .custom-tabs .v-tabs-slider {
   height: 3px;
+}
+
+/* Dark theme tab styling */
+.v-theme--dark .custom-tabs .v-tab:not(.v-tab--selected) {
+  color: #9e9e9e !important;
+}
+
+.v-theme--light .custom-tabs .v-tab:not(.v-tab--selected) {
+  color: #666666 !important;
 }
 </style>

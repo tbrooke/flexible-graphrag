@@ -4,7 +4,6 @@
       v-model="activeTab" 
       class="mb-4"
       color="primary"
-      bg-color="grey-lighten-5"
       slider-color="primary">
       <v-tab value="search">Hybrid Search</v-tab>
       <v-tab value="qa">Q&A Query</v-tab>
@@ -23,7 +22,7 @@
         :disabled="isQuerying"
       ></v-text-field>
       <v-btn
-        color="secondary"
+        color="primary"
         size="large"
         :disabled="isQuerying || !question.trim()"
         :loading="isQuerying"

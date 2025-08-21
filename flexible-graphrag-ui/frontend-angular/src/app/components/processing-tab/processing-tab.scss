@@ -134,3 +134,15 @@
   color: #721c24;
   border: 1px solid #f5c6cb;
 }
+
+// Remove Selected button styling - ensure red border is visible
+.action-buttons button[color="warn"] {
+  border-color: #f44336 !important; // Material red
+  color: #f44336 !important;
+}
+
+// Dark theme support for Remove Selected button
+:host-context(.dark-theme) .action-buttons button[color="warn"] {
+  border-color: #ff5252 !important; // Lighter red for dark mode
+  color: #ff5252 !important;
+}

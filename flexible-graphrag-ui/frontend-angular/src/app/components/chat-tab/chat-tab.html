@@ -3,17 +3,11 @@
   <div class="chat-header">
     <h2>Chat Interface</h2>
     <div class="header-actions">
-      <mat-chip-set>
-        <mat-chip>
-          <mat-icon matChipAvatar>chat</mat-icon>
-          Q&A Mode
-        </mat-chip>
-      </mat-chip-set>
       <button 
-        mat-raised-button 
-        color="primary"
+        mat-stroked-button 
         [disabled]="chatMessages.length === 0"
-        (click)="clearChatHistory()">
+        (click)="clearChatHistory()"
+        class="clear-history-button">
         CLEAR HISTORY
       </button>
     </div>
@@ -99,8 +93,7 @@
 
   <!-- Help Text -->
   <p class="help-text">
-    Press Enter to send, Shift+Enter for new line • 
-    Q&A mode: Provides conversational answers
+    Press Enter or click arrow to send a Q&A Query, which provides a conversational answer, Shift+Enter for new line
   </p>
 
   <!-- Error Message -->
