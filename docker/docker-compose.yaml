@@ -14,11 +14,10 @@ include:
    - includes/elasticsearch-dev.yaml  # Elasticsearch with security disabled
    - includes/kibana-simple.yaml       # Kibana working configuration
    - includes/opensearch.yaml      # Commented - using elasticsearch instead
-   - includes/alfresco.yaml        # Alfresco content management system
-   # commented out app-stack.yaml and proxy.yaml currently using external/standalone flexible-graphrag 
-   # backend and ui clients, but using databases in docker
-   #- includes/app-stack.yaml       # backend and ui clients
-   #- includes/proxy.yaml           # proxy for backend and ui clients
+   #- includes/alfresco.yaml        # Commented - using existing external Alfresco
+   # Enabling app-stack and proxy for full GraphRAG deployment
+   - includes/app-stack.yaml       # backend and ui clients
+   - includes/proxy.yaml           # proxy for backend and ui clients
 
 # Volumes are defined in individual include files
 

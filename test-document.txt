@@ -1,0 +1,11 @@
+This is a test document for GraphRAG.
+
+It contains information about document management and AI-powered search capabilities.
+
+Key features:
+- Vector search for semantic matching
+- Knowledge graph for relationship discovery  
+- Full-text search for exact matches
+- Hybrid search combining all approaches
+
+This document will be used to test the GraphRAG upload and processing pipeline.

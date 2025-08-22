@@ -14,13 +14,13 @@ services:
       - SCHEMA_NAME=default
       
       # Alfresco configuration (for when DATA_SOURCE=alfresco)
-      - ALFRESCO_URL=http://host.docker.internal:8080/alfresco
+      - ALFRESCO_URL=http://trustblocks.com/alfresco
       - ALFRESCO_USERNAME=admin
       - ALFRESCO_PASSWORD=admin
       - ALFRESCO_PATH=/Shared/GraphRAG
       
       # CMIS configuration for Alfresco
-      - CMIS_URL=http://host.docker.internal:8080/alfresco/api/-default-/public/cmis/versions/1.1/atom
+      - CMIS_URL=http://trustblocks.com/alfresco/api/-default-/public/cmis/versions/1.1/atom
       - CMIS_USERNAME=admin
       - CMIS_PASSWORD=admin
       
@@ -77,20 +77,20 @@ services:
       
       # OpenAI is recommended over Ollama for speed of KG building pipeline, speed of search and q&a query    
 
-      # Ollama LLM configuration
-      - USE_OPENAI=false
-      - LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Ollama LLM configuration (disabled)
+      #- USE_OPENAI=false
+      #- LLM_PROVIDER=ollama
+      #- OLLAMA_BASE_URL=http://host.docker.internal:11434
       #- OLLAMA_MODEL=llama3.1:8b
       #- OLLAMA_MODEL=llama3.2:latest
-      - OLLAMA_MODEL=gpt-oss:20b
+      #- OLLAMA_MODEL=gpt-oss:20b
       
                   
-      #  OpenAI LLM configuration (commented out - add OPENAI_API_KEY to use)
-      #- USE_OPENAI=true
-      #- LLM_PROVIDER=openai
-      #- OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      #- OPENAI_MODEL=gpt-4o-mini
+      # OpenAI LLM configuration (enabled - requires OPENAI_API_KEY)
+      - USE_OPENAI=true
+      - LLM_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=gpt-4o-mini
         
        
       # Processing configuration
